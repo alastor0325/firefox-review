@@ -73,7 +73,7 @@ When a worktree has multiple commits the UI shows **tabs** — one per patch:
 [ Part 1: Add WebIDL ]  [ Part 2: Implement logic ]  [ Part 3: Fire events ]
 ```
 
-Each tab shows a comment-count badge, a `✓` if approved, or a `⊘` if skipped.
+Each tab shows a comment-count badge, a `✓` if approved, a `✗` if denied, or a `⊘` if skipped. Tabs with amended commits show a `↑` badge.
 
 ### Per-patch actions
 
@@ -89,10 +89,16 @@ All can be undone by clicking again.
 
 ### Adding comments
 
+- **Click the commit message** to leave feedback on it (subject + body shown separately)
 - **Click any diff line** to open an inline comment box
 - **Save** — the comment appears as a yellow annotation beneath the line
 - Click the annotation to edit it, × to delete it
+- Unsaved text in a comment form is cached as a draft — closing the form preserves it; **Discard draft** clears it
 - Use the **General feedback** box for patch-level concerns not tied to a specific line
+
+### Revision detection
+
+If a patch has been amended or rebased since the last review session, its tab shows a `↑` badge. A **Revision** bar appears above the diff with one button per recorded revision (`Rev 1`, `Rev 2`, `Rev 3 · current`). Click any revision button to compare diffs between versions.
 
 ### Submitting feedback
 
@@ -111,7 +117,7 @@ Your review state (comments, general feedback, approved/denied/skipped status) i
 
 | Action | State JSON | MD file |
 |---|---|---|
-| Add / edit / delete a line comment | ✓ auto-saved | ✗ |
+| Add / edit / delete a comment | ✓ auto-saved | ✗ |
 | Type in the General feedback textarea | ✓ auto-saved | ✗ |
 | Click **Approve** / **Unapprove** | ✓ auto-saved | ✗ |
 | Click **Deny** / **Undeny** | ✓ auto-saved | ✗ |
@@ -141,6 +147,10 @@ You are being asked to revise your implementation in worktree firefox-my-feature
 ## Part 1 (aaa111) — my-feature - Part 1: Add WebIDL
 
 ⚠ This patch was denied — it requires significant changes.
+
+### Commit message feedback:
+
+[FEEDBACK]: Fix commit message — use "Bug XXXXXX -" prefix
 
 ### Line-level feedback:
 
@@ -183,10 +193,21 @@ npm run test:watch    # watch mode
 npm run test:coverage # coverage report
 ```
 
+To run with auto-restart on file changes (from the project directory):
+
+```bash
+npm run dev -- <worktree-name>
+# e.g.
+npm run dev -- my-feature
+```
+
+nodemon watches `src/`, `public/`, and `bin/` and restarts the server on any change. Refresh the browser tab manually to pick up the new build.
+
 Tests cover:
 - `parseDiff` — diff parsing (added/removed/context lines, multiple files, binary files, multiple hunks)
+- `parseCommitBody` — full commit message extraction from `git show` output
 - `parseWorktreeList` — worktree discovery parsing
-- `formatCombinedPrompt` / `submitReview` — combined prompt structure, approved/skipped markers, multi-patch feedback
+- `formatCombinedPrompt` / `submitReview` — combined prompt structure, approved/skipped markers, commit message feedback, multi-patch feedback
 - Express routes — all API endpoints with mocked git and claude modules
 
 ## License

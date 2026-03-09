@@ -202,45 +202,31 @@ describe('POST /api/submit', () => {
     expect(res.body.ok).toBe(true);
   });
 
-  test('passes skippedHashes to submitReview', async () => {
-    const app = makeApp();
-    await request(app).post('/api/submit').send({ ...validBody, skippedHashes: ['bbb222'] });
-    const skippedArg = submitReview.mock.calls[0][4];
-    expect(skippedArg).toEqual(['bbb222']);
-  });
-
-  test('passes empty skippedHashes when not provided', async () => {
-    const app = makeApp();
-    await request(app).post('/api/submit').send(validBody);
-    const skippedArg = submitReview.mock.calls[0][4];
-    expect(skippedArg).toEqual([]);
-  });
-
   test('passes approvedHashes to submitReview', async () => {
     const app = makeApp();
     await request(app).post('/api/submit').send({ ...validBody, approvedHashes: ['bbb222'] });
-    const approvedArg = submitReview.mock.calls[0][5];
+    const approvedArg = submitReview.mock.calls[0][4];
     expect(approvedArg).toEqual(['bbb222']);
   });
 
   test('passes empty approvedHashes when not provided', async () => {
     const app = makeApp();
     await request(app).post('/api/submit').send(validBody);
-    const approvedArg = submitReview.mock.calls[0][5];
+    const approvedArg = submitReview.mock.calls[0][4];
     expect(approvedArg).toEqual([]);
   });
 
   test('passes deniedHashes to submitReview', async () => {
     const app = makeApp();
     await request(app).post('/api/submit').send({ ...validBody, deniedHashes: ['bbb222'] });
-    const deniedArg = submitReview.mock.calls[0][6];
+    const deniedArg = submitReview.mock.calls[0][5];
     expect(deniedArg).toEqual(['bbb222']);
   });
 
   test('passes empty deniedHashes when not provided', async () => {
     const app = makeApp();
     await request(app).post('/api/submit').send(validBody);
-    const deniedArg = submitReview.mock.calls[0][6];
+    const deniedArg = submitReview.mock.calls[0][5];
     expect(deniedArg).toEqual([]);
   });
 

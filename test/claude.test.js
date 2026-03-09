@@ -88,22 +88,8 @@ describe('formatCombinedPrompt', () => {
     expect(out).not.toContain('### General feedback:');
   });
 
-  test('marks skipped patches in the series list', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [patch3.hash]);
-    const lines = out.split('\n');
-    const skippedLine = lines.find((l) => l.includes(patch3.hash));
-    expect(skippedLine).toContain('[SKIPPED — not reviewed]');
-  });
-
-  test('omits feedback section for skipped patches even if they have comments', () => {
-    const feedback = makeFeedback([{ hash: 'bbb222', comments: comments2 }]);
-    const out = formatCombinedPrompt('bugABC', allPatches, feedback, [patch2.hash]);
-    const afterSeries = out.slice(out.indexOf('---'));
-    expect(afterSeries).not.toContain(patch2.hash);
-  });
-
   test('marks approved patches in the series list', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [patch3.hash]);
+    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [patch3.hash]);
     const lines = out.split('\n');
     const approvedLine = lines.find((l) => l.includes(patch3.hash));
     expect(approvedLine).toContain('[APPROVED — no issues]');
@@ -111,45 +97,29 @@ describe('formatCombinedPrompt', () => {
 
   test('includes feedback section for approved patches that have feedback', () => {
     const feedback = makeFeedback([{ hash: 'bbb222', comments: comments2 }]);
-    const out = formatCombinedPrompt('bugABC', allPatches, feedback, [], [patch2.hash]);
+    const out = formatCombinedPrompt('bugABC', allPatches, feedback, [patch2.hash]);
     const afterSeries = out.slice(out.indexOf('---'));
     expect(afterSeries).toContain(patch2.hash);
     expect(afterSeries).toContain('[FEEDBACK]  : Handle the error');
   });
 
   test('omits feedback section for approved patches with no feedback', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [patch3.hash]);
+    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [patch3.hash]);
     const afterSeries = out.slice(out.indexOf('---'));
     expect(afterSeries).not.toContain(patch3.hash);
   });
 
-  test('skipped takes priority over approved for the same patch', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [patch3.hash], [patch3.hash]);
-    const lines = out.split('\n');
-    const line = lines.find((l) => l.includes(patch3.hash));
-    expect(line).toContain('[SKIPPED');
-    expect(line).not.toContain('[APPROVED');
-  });
-
   test('marks denied patches with [DENIED] in the series list', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [], [patch3.hash]);
+    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [patch3.hash]);
     const lines = out.split('\n');
     const deniedLine = lines.find((l) => l.includes(patch3.hash));
     expect(deniedLine).toContain('[DENIED — requires significant changes]');
   });
 
   test('includes feedback section for denied patch even without text feedback', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [], [patch2.hash]);
+    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [], [patch2.hash]);
     expect(out).toContain('⚠ This patch was denied');
     expect(out).toContain(patch2.hash);
-  });
-
-  test('denied does not override skipped in series list', () => {
-    const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback(), [patch3.hash], [], [patch3.hash]);
-    const lines = out.split('\n');
-    const line = lines.find((l) => l.includes(patch3.hash));
-    expect(line).toContain('[SKIPPED');
-    expect(line).not.toContain('[DENIED');
   });
 
   test('deniedHashes defaults to empty — no DENIED markers when omitted', () => {
@@ -236,20 +206,14 @@ describe('submitReview', () => {
     expect(files).toHaveLength(1);
   });
 
-  test('reflects skipped patches in the file', () => {
-    submitReview(tmpDir, 'bugABC', allPatches, makeFeedback(), [patch3.hash]);
-    const content = fs.readFileSync(path.join(tmpDir, 'REVIEW_FEEDBACK_bugABC.md'), 'utf8');
-    expect(content).toContain('[SKIPPED');
-  });
-
   test('reflects approved patches in the file', () => {
-    submitReview(tmpDir, 'bugABC', allPatches, makeFeedback(), [], [patch3.hash]);
+    submitReview(tmpDir, 'bugABC', allPatches, makeFeedback(), [patch3.hash]);
     const content = fs.readFileSync(path.join(tmpDir, 'REVIEW_FEEDBACK_bugABC.md'), 'utf8');
     expect(content).toContain('[APPROVED — no issues]');
   });
 
   test('reflects denied patches in the file', () => {
-    submitReview(tmpDir, 'bugABC', allPatches, makeFeedback(), [], [], [patch2.hash]);
+    submitReview(tmpDir, 'bugABC', allPatches, makeFeedback(), [], [patch2.hash]);
     const content = fs.readFileSync(path.join(tmpDir, 'REVIEW_FEEDBACK_bugABC.md'), 'utf8');
     expect(content).toContain('[DENIED');
   });

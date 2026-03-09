@@ -1,0 +1,11 @@
+{
+  "name": "firefox-review",
+  "version": "0.1.0",
+  "description": "Review Claude-generated Firefox patches in git worktrees",
+  "bin": {
+    "firefox-review": "./bin/firefox-review.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

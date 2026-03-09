@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>firefox-review</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <div id="header">
+    <div id="header-left">
+      <h1>
+        firefox-review ·
+        <span id="bug-id-display"></span>
+      </h1>
+      <div style="font-size:12px; color:#6e7681; margin-bottom:6px;" id="worktree-path"></div>
+      <ul id="commit-list"></ul>
+    </div>
+    <div id="submit-area">
+      <button id="btn-submit" disabled>Submit Review to Claude</button>
+      <span id="submit-warning">Add at least one comment first</span>
+    </div>
+  </div>
+
+  <!-- ── Loading / error ── -->
+  <div id="loading">Loading diff…</div>
+  <div id="error-msg" style="display:none;"></div>
+
+  <!-- ── Files changed ── -->
+  <div id="files-changed" style="display:none;"></div>
+
+  <!-- ── Result overlay ── -->
+  <div id="result-overlay">
+    <div id="result-modal">
+      <h3>Review submitted!</h3>
+      <p>Feedback saved to: <code id="result-feedback-path" style="color:#e6edf3;font-size:12px;"></code></p>
+      <p style="margin-top:12px;">Run the following command in your terminal to send it to Claude:</p>
+      <div id="result-command"></div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button id="btn-copy-command">Copy command</button>
+        <button id="btn-close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

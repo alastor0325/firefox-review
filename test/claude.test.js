@@ -170,10 +170,10 @@ describe('submitReview', () => {
     expect(feedbackPath).toBe(path.join(tmpDir, 'REVIEW_FEEDBACK_bugABC.md'));
   });
 
-  test('returns a command referencing the feedback file', () => {
-    const { command } = submitReview(tmpDir, 'bugABC', allPatches, makeFeedback());
-    expect(typeof command).toBe('string');
-    expect(command).toContain('REVIEW_FEEDBACK_bugABC.md');
+  test('returns the prompt text', () => {
+    const { prompt } = submitReview(tmpDir, 'bugABC', allPatches, makeFeedback());
+    expect(typeof prompt).toBe('string');
+    expect(prompt).toContain('firefox-bugABC');
   });
 
   test('overwrites the same file on successive calls', () => {

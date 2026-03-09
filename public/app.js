@@ -535,7 +535,7 @@ async function submitReview() {
     if (!res.ok) throw new Error(json.error || 'Server error');
 
     $('#result-feedback-path').textContent = json.feedbackPath;
-    $('#result-command').textContent = json.command;
+    $('#result-prompt').value = json.prompt;
     $('#result-overlay').classList.add('visible');
 
     renderTabs();
@@ -552,11 +552,11 @@ async function init() {
 
   $('#btn-submit').addEventListener('click', submitReview);
 
-  $('#btn-copy-command').addEventListener('click', () => {
-    const cmd = $('#result-command').textContent;
-    navigator.clipboard.writeText(cmd).then(() => {
-      $('#btn-copy-command').textContent = 'Copied!';
-      setTimeout(() => { $('#btn-copy-command').textContent = 'Copy command'; }, 2000);
+  $('#btn-copy-prompt').addEventListener('click', () => {
+    const prompt = $('#result-prompt').value;
+    navigator.clipboard.writeText(prompt).then(() => {
+      $('#btn-copy-prompt').textContent = 'Copied!';
+      setTimeout(() => { $('#btn-copy-prompt').textContent = 'Copy prompt'; }, 2000);
     });
   });
 

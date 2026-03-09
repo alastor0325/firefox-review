@@ -135,7 +135,7 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
 
       const skippedHashes = Array.isArray(req.body.skippedHashes) ? req.body.skippedHashes : [];
       const approvedHashes = Array.isArray(req.body.approvedHashes) ? req.body.approvedHashes : [];
-      const { feedbackPath, command } = submitReview(
+      const { feedbackPath, prompt } = submitReview(
         worktreePath,
         worktreeName,
         patchesCache,
@@ -143,7 +143,7 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
         skippedHashes,
         approvedHashes
       );
-      res.json({ ok: true, feedbackPath, command });
+      res.json({ ok: true, feedbackPath, prompt });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

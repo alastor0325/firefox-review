@@ -73,7 +73,7 @@ For each part with feedback above, apply changes only to files modified in that 
 }
 
 /**
- * Write REVIEW_FEEDBACK_<worktreeName>.md and return the command to run.
+ * Write REVIEW_FEEDBACK_<worktreeName>.md and return the prompt text.
  *
  * @param {string} worktreePath
  * @param {string} worktreeName
@@ -81,22 +81,14 @@ For each part with feedback above, apply changes only to files modified in that 
  * @param {Array<{ hash: string, comments: Array, generalComment: string }>} allFeedback
  * @param {string[]} skippedHashes
  * @param {string[]} approvedHashes
- * @returns {{ feedbackPath: string, command: string }}
+ * @returns {{ feedbackPath: string, prompt: string }}
  */
 function submitReview(worktreePath, worktreeName, allPatches, allFeedback, skippedHashes = [], approvedHashes = []) {
   const prompt = formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHashes, approvedHashes);
   const filename = `REVIEW_FEEDBACK_${worktreeName}.md`;
   const feedbackPath = path.join(worktreePath, filename);
   fs.writeFileSync(feedbackPath, prompt, 'utf8');
-
-  let command;
-  if (os.platform() === 'win32') {
-    command = `cd /d "${worktreePath}" && powershell -Command "Get-Content '${filename}' -Raw | claude --print -"`;
-  } else {
-    command = `cd "${worktreePath}" && claude --print "$(cat ${filename})"`;
-  }
-
-  return { feedbackPath, command };
+  return { feedbackPath, prompt };
 }
 
 module.exports = { formatCombinedPrompt, submitReview };

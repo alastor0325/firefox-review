@@ -124,7 +124,7 @@ describe('POST /api/submit', () => {
     getDiffPerCommit.mockReturnValue(PATCHES);
     submitReview.mockReturnValue({
       feedbackPath: '/fake/worktree/REVIEW_FEEDBACK_bugABC.md',
-      command: 'cd "/fake/worktree" && claude --print "$(cat REVIEW_FEEDBACK_bugABC.md)"',
+      prompt: 'You are being asked to revise…',
     });
   });
 
@@ -144,7 +144,7 @@ describe('POST /api/submit', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.feedbackPath).toContain('REVIEW_FEEDBACK_bugABC.md');
-    expect(res.body.command).toContain('REVIEW_FEEDBACK_bugABC.md');
+    expect(res.body.prompt).toBeTruthy();
   });
 
   test('calls submitReview with allPatches and allFeedback', async () => {

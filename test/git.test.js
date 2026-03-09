@@ -1,6 +1,11 @@
 'use strict';
 
-const { parseDiff, parseWorktreeList } = require('../src/git');
+jest.mock('child_process', () => ({
+  execSync: jest.fn(),
+}));
+
+const { execSync } = require('child_process');
+const { parseDiff, parseWorktreeList, getDiffForCommit } = require('../src/git');
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -261,5 +266,55 @@ describe('parseWorktreeList', () => {
 
   test('returns empty array for empty output', () => {
     expect(parseWorktreeList('', MAIN)).toEqual([]);
+  });
+});
+
+// ── getDiffForCommit ───────────────────────────────────────────────────────
+
+describe('getDiffForCommit', () => {
+  const WORKTREE = '/fake/worktree';
+  const HASH = 'abc1234';
+
+  const SAMPLE_DIFF = `commit abc1234
+Author: Dev <dev@example.com>
+Date:   Mon Jan 1 00:00:00 2024
+
+    Add foo
+
+diff --git a/foo.js b/foo.js
+--- a/foo.js
++++ b/foo.js
+@@ -1,1 +1,2 @@
+ line1
++line2`;
+
+  beforeEach(() => {
+    execSync.mockReset();
+  });
+
+  test('calls git show with the correct hash and worktree path', () => {
+    execSync.mockReturnValue(SAMPLE_DIFF);
+    getDiffForCommit(WORKTREE, HASH);
+    expect(execSync).toHaveBeenCalledWith(
+      `git -C "${WORKTREE}" show ${HASH}`,
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
+    );
+  });
+
+  test('returns parsed files array in the same format as getDiffPerCommit', () => {
+    execSync.mockReturnValue(SAMPLE_DIFF);
+    const files = getDiffForCommit(WORKTREE, HASH);
+    expect(Array.isArray(files)).toBe(true);
+    expect(files).toHaveLength(1);
+    expect(files[0].newPath).toBe('foo.js');
+    expect(files[0].oldPath).toBe('foo.js');
+    expect(files[0].hunks).toHaveLength(1);
+    const addedLine = files[0].hunks[0].lines.find((l) => l.type === 'added');
+    expect(addedLine).toMatchObject({ type: 'added', content: 'line2' });
+  });
+
+  test('throws when git returns an error', () => {
+    execSync.mockImplementation(() => { throw new Error('unknown revision'); });
+    expect(() => getDiffForCommit(WORKTREE, HASH)).toThrow('unknown revision');
   });
 });

@@ -11,6 +11,9 @@ const state = {
   denied: new Set(),    // patchHashes the reviewer denied
   patches: [],
   currentPatchIdx: 0,
+  revisions: [],        // [{ savedAt, patches: [{hash, message}] }] — persisted
+  updatedPatches: {},   // { patchIdx: { oldHash, oldMessage } } — computed on init, not persisted
+  showPrevRevision: {}, // { patchIdx: bool } — ephemeral toggle state
 };
 
 // ── DOM helpers ────────────────────────────────────────────────────────────
@@ -47,6 +50,7 @@ async function saveState() {
         skipped: [...state.skipped],
         approved: [...state.approved],
         denied: [...state.denied],
+        revisions: state.revisions,
       }),
     });
     if (indicator) {
@@ -389,6 +393,40 @@ function renderFile(fileData, patchHash) {
   return block;
 }
 
+// ── Revision detection ─────────────────────────────────────────────────────
+function detectRevisionChanges() {
+  if (state.patches.length === 0) return;
+
+  const lastRevision = state.revisions[state.revisions.length - 1];
+  const currentSnapshot = state.patches.map((p) => ({ hash: p.hash, message: p.message }));
+
+  if (!lastRevision) {
+    // First time — record baseline, nothing to compare against
+    state.revisions.push({ savedAt: new Date().toISOString(), patches: currentSnapshot });
+    scheduleAutoSave();
+    return;
+  }
+
+  let hasChanges = false;
+  const prevPatches = lastRevision.patches;
+  for (let i = 0; i < Math.max(state.patches.length, prevPatches.length); i++) {
+    const curr = state.patches[i];
+    const prev = prevPatches[i];
+    if (!curr || !prev || curr.hash !== prev.hash) {
+      if (curr && prev) {
+        state.updatedPatches[i] = { oldHash: prev.hash, oldMessage: prev.message };
+      }
+      hasChanges = true;
+    }
+  }
+
+  if (hasChanges) {
+    state.revisions.push({ savedAt: new Date().toISOString(), patches: currentSnapshot });
+    if (state.revisions.length > 10) state.revisions = state.revisions.slice(-10);
+    scheduleAutoSave();
+  }
+}
+
 // ── Patch tab rendering ─────────────────────────────────────────────────────
 function renderTabs() {
   const tabsBar = $('#patch-tabs-bar');
@@ -413,7 +451,8 @@ function renderTabs() {
       (idx === state.currentPatchIdx ? ' active' : '') +
       (isSkipped ? ' skipped' : '') +
       (isApproved ? ' approved' : '') +
-      (isDenied ? ' denied' : '');
+      (isDenied ? ' denied' : '') +
+      (state.updatedPatches[idx] ? ' updated' : '');
 
     const badge = commentCount > 0 && !isSkipped && !isApproved
       ? ` <span class="tab-badge">${commentCount}</span>`
@@ -421,8 +460,11 @@ function renderTabs() {
     const skippedIcon = isSkipped ? ' <span class="tab-skipped-icon">⊘</span>' : '';
     const approvedIcon = isApproved ? ' <span class="tab-approved-icon">✓</span>' : '';
     const deniedIcon = isDenied ? ' <span class="tab-denied-icon">✗</span>' : '';
+    const updatedIcon = state.updatedPatches[idx]
+      ? ' <span class="tab-updated-icon">↑</span>'
+      : '';
 
-    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}${approvedIcon}${deniedIcon}</span>`;
+    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}${approvedIcon}${deniedIcon}${updatedIcon}</span>`;
     tab.addEventListener('click', () => switchPatch(idx));
     tabsEl.appendChild(tab);
   });
@@ -506,6 +548,29 @@ function renderCurrentPatch() {
   heading.appendChild(btnGroup);
   container.appendChild(heading);
 
+  // Revision toggle bar — shown when this patch was updated since last review
+  const updateInfo = state.updatedPatches[state.currentPatchIdx];
+  if (updateInfo) {
+    const revBar = document.createElement('div');
+    revBar.className = 'revision-toggle-bar';
+    const isShowingPrev = !!state.showPrevRevision[state.currentPatchIdx];
+    revBar.innerHTML = `
+      <span class="revision-toggle-label">
+        ${isShowingPrev
+          ? `Showing: <strong>Previous revision</strong> (${updateInfo.oldHash})`
+          : `Showing: <strong>Current revision</strong> (${escapeHtml(patch.hash)})`}
+      </span>
+      <button class="btn-toggle-revision">
+        ${isShowingPrev ? '→ Show current revision' : '← Show previous revision'}
+      </button>`;
+    revBar.querySelector('.btn-toggle-revision').addEventListener('click', () => {
+      state.showPrevRevision[state.currentPatchIdx] = !isShowingPrev;
+      renderCurrentPatch();
+      renderTabs();
+    });
+    container.appendChild(revBar);
+  }
+
   // General comment box (always shown so user can read it even when skipped/approved)
   const generalBox = document.createElement('div');
   generalBox.className = 'general-comment-box';
@@ -553,16 +618,49 @@ function renderCurrentPatch() {
     return;
   }
 
-  if (patch.files.length === 0) {
-    const msg = document.createElement('p');
-    msg.style.cssText = 'color:#8b949e;padding:8px 0;';
-    msg.textContent = 'No changed files in this patch.';
-    container.appendChild(msg);
-    return;
-  }
+  if (state.showPrevRevision[state.currentPatchIdx] && state.updatedPatches[state.currentPatchIdx]) {
+    const oldHash = state.updatedPatches[state.currentPatchIdx].oldHash;
+    const prevHeader = document.createElement('div');
+    prevHeader.className = 'diff-revision-header diff-revision-previous';
+    prevHeader.textContent = `Previous revision — ${oldHash}`;
+    container.appendChild(prevHeader);
 
-  for (const fileData of patch.files) {
-    container.appendChild(renderFile(fileData, patch.hash));
+    const placeholder = document.createElement('div');
+    placeholder.className = 'diff-revision-loading';
+    placeholder.textContent = 'Loading previous revision…';
+    container.appendChild(placeholder);
+
+    fetch(`/api/patchdiff/${oldHash}`)
+      .then((r) => r.json())
+      .then((data) => {
+        placeholder.remove();
+        if (data.error) {
+          const err = document.createElement('p');
+          err.style.cssText = 'color:#f85149;padding:8px 24px;';
+          err.textContent = `Could not load previous revision: ${data.error}`;
+          container.appendChild(err);
+          return;
+        }
+        for (const fileData of (data.files || [])) {
+          const block = renderFile(fileData, oldHash);
+          block.classList.add('diff-previous-revision');
+          container.appendChild(block);
+        }
+      })
+      .catch(() => {
+        placeholder.textContent = 'Failed to load previous revision.';
+      });
+  } else {
+    if (patch.files.length === 0) {
+      const msg = document.createElement('p');
+      msg.style.cssText = 'color:#8b949e;padding:8px 0;';
+      msg.textContent = 'No changed files in this patch.';
+      container.appendChild(msg);
+    } else {
+      for (const fileData of patch.files) {
+        container.appendChild(renderFile(fileData, patch.hash));
+      }
+    }
   }
 }
 
@@ -657,6 +755,7 @@ async function init() {
       if (saved.approved) state.approved = new Set(saved.approved);
       if (saved.denied) state.denied = new Set(saved.denied);
       if (saved.prompt) savedPromptText = saved.prompt;
+      if (saved.revisions) state.revisions = saved.revisions;
     }
 
     state.patches = data.patches || [];
@@ -668,6 +767,7 @@ async function init() {
     loading.style.display = 'none';
     filesChanged.style.display = '';
 
+    detectRevisionChanges();
     renderTabs();
     renderCurrentPatch();
     updateSubmitButton();

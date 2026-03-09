@@ -183,6 +183,20 @@ function parseDiff(diffText) {
 }
 
 /**
+ * Get the diff for a single commit by hash.
+ * @param {string} worktreePath
+ * @param {string} hash
+ * @returns {Array} files array (same format as getDiffPerCommit entries)
+ */
+function getDiffForCommit(worktreePath, hash) {
+  const raw = execSync(
+    `git -C "${worktreePath}" show ${hash}`,
+    { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
+  );
+  return parseDiff(raw);
+}
+
+/**
  * Get per-commit diffs. Returns an array of patch objects (oldest first):
  * { hash, message, files }
  */
@@ -248,4 +262,4 @@ function discoverWorktrees(mainRepoPath) {
   return parseWorktreeList(output, mainRepoPath);
 }
 
-module.exports = { getCommits, getDiffPerCommit, getMergeBase, parseDiff, parseWorktreeList, discoverWorktrees };
+module.exports = { getCommits, getDiffPerCommit, getDiffForCommit, getMergeBase, parseDiff, parseWorktreeList, discoverWorktrees };

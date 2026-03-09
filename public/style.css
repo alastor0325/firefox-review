@@ -698,3 +698,54 @@ tr.comment-display-row td {
 ::-webkit-scrollbar-track { background: #0d1117; }
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* ── Revision detection ── */
+.patch-tab.updated .tab-updated-icon {
+  color: #f0883e;
+  font-weight: bold;
+  margin-left: 4px;
+}
+
+.revision-toggle-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px;
+  background: #1c2128;
+  border-bottom: 1px solid #30363d;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.revision-toggle-label strong { color: #e6edf3; }
+
+.btn-toggle-revision {
+  background: #21262d;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-toggle-revision:hover { background: #30363d; }
+
+.diff-revision-header {
+  padding: 6px 24px;
+  font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-weight: bold;
+  border-bottom: 1px solid #30363d;
+}
+.diff-revision-previous { background: #2d1b00; color: #f0883e; }
+
+.diff-revision-loading {
+  padding: 16px 24px;
+  color: #8b949e;
+  font-size: 13px;
+}
+
+.diff-previous-revision { opacity: 0.75; }
+.diff-previous-revision .file-header { background: #1a1200; }
+.diff-previous-revision .line-added { background: #1a2d1a; }
+.diff-previous-revision .line-removed { background: #2d1a1a; }

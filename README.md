@@ -6,23 +6,11 @@ A local web UI for reviewing Claude-generated Firefox patches in git worktrees.
 
 When you use Claude Code to implement a Firefox bug, the patches land in a dedicated git worktree (e.g. `~/firefox-my-feature`). Reviewing those changes and sending feedback back to Claude is awkward — there's no clean way to annotate specific lines and hand the structured feedback off without manual copy-pasting.
 
-`firefox-review` solves this with a GitHub-style diff viewer that runs locally, lets you leave inline comments per patch, and generates a structured prompt that Claude can act on directly.
-
-## How it works
-
-```
-firefox-review [worktree-name]
-```
-
-1. Finds the worktree at `~/firefox-<worktree-name>`
-2. Computes the diff — splits each commit into its own tab (Part 1, Part 2, …)
-3. Starts a local web server and opens the diff viewer in your browser
-4. You switch between patch tabs and click any diff line to leave an inline comment
-5. Click **"Submit Review for Part N to Claude"** — the tool writes `REVIEW_FEEDBACK_<hash>.md` to the worktree and shows you the one command to run in your terminal
+`firefox-review` solves this with a GitHub-style diff viewer that runs locally, lets you leave inline comments per patch, and generates a structured prompt you can paste directly into Claude.
 
 ## Setup
 
-**Prerequisites:** Node.js ≥ 18, [Claude Code CLI](https://github.com/anthropics/claude-code)
+**Prerequisites:** Node.js ≥ 18
 
 ```bash
 git clone https://github.com/alastor0325/firefox-review
@@ -39,25 +27,15 @@ npm link          # makes `firefox-review` available globally
 ~/firefox-experiment/    ← another worktree
 ```
 
-The worktree name can be anything — a bug number, a feature name, an experiment label, etc.
-
 ## Usage
 
-### With a worktree name
+### Interactive picker (no argument)
 
 ```bash
-firefox-review <worktree-name>
-
-# Examples:
-firefox-review my-feature
-firefox-review experiment
+firefox-review
 ```
 
-`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`.
-
-### Without an argument — interactive picker
-
-If you omit the name, `firefox-review` lists the main repo and all registered worktrees for you to choose from:
+Lists all worktrees and the main repo:
 
 ```
 Available repos / worktrees:
@@ -69,76 +47,116 @@ Available repos / worktrees:
 Select [1-3]:
 ```
 
-Type the number and press Enter. The browser opens at `http://localhost:7777` automatically on macOS, Linux, and Windows.
+### Direct launch
+
+```bash
+firefox-review <worktree-name>
+
+# Examples:
+firefox-review my-feature
+firefox-review experiment
+```
+
+`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`.
+
+The browser opens at `http://localhost:7777` automatically (increments if the port is busy).
 
 ## Reviewing
 
 ### Per-patch tabs
 
-When a worktree has multiple commits, the UI shows **tabs** at the top — one per patch:
+When a worktree has multiple commits the UI shows **tabs** — one per patch:
 
 ```
 [ Part 1: Add WebIDL ]  [ Part 2: Implement logic ]  [ Part 3: Fire events ]
 ```
 
-- Switch tabs to review each patch independently
-- Comments are scoped per patch — switching tabs never loses your work
-- The tab shows a badge counter once you add comments to it
+Each tab shows a comment-count badge, a `✓` if approved, or a `⊘` if skipped.
 
-### Skipping patches
+### Per-patch actions
 
-If a patch doesn't need review, click **"Skip this patch"** in the patch heading. The tab turns gray with a strikethrough and the diff is hidden. Click **"Undo skip"** to restore it. Skipped patches are noted in the prompt sent to Claude so it knows which commits weren't reviewed.
+Each patch has two buttons in the heading:
+
+| Button | Meaning |
+|---|---|
+| **Approve** | Patch looks good — no issues. Turns green `Approved ✓`. |
+| **Skip** | Patch won't be reviewed. Turns gray with strikethrough. |
+
+Both can be undone by clicking again.
 
 ### Adding comments
 
 - **Click any diff line** to open an inline comment box
-- **Save** the comment — it appears as a yellow annotation beneath the line
-- Click the annotation to edit it, or × to delete it
+- **Save** — the comment appears as a yellow annotation beneath the line
+- Click the annotation to edit it, × to delete it
+- Use the **General feedback** box for patch-level concerns not tied to a specific line
 
 ### Submitting feedback
 
-After reviewing a patch, click **"Submit Review for Part N to Claude"**. The tool:
+Once a patch has at least one line comment or a general comment, the **Submit Review for Part N** button is enabled. Clicking it:
 
-1. Writes `REVIEW_FEEDBACK_<hash>.md` to the worktree (one file per patch, no clobbering):
+1. Writes `REVIEW_FEEDBACK_<worktree-name>.md` in the worktree (see format below)
+2. Opens a modal with the full prompt — click **Copy prompt** and paste it into Claude
+
+## Auto-save and state persistence
+
+Your review state (comments, general feedback, approved/skipped status) is saved automatically to `REVIEW_STATE_<worktree-name>.json` in the worktree. When you reopen `firefox-review` for the same worktree, all your work is restored automatically.
+
+### What triggers a state save and MD regeneration
+
+Every one of the following actions saves state and rewrites `REVIEW_FEEDBACK_<worktree-name>.md` (debounced 500 ms):
+
+| Action | Triggers save + MD |
+|---|---|
+| Add / edit / delete a line comment | ✓ |
+| Type in the General feedback textarea | ✓ |
+| Click **Approve** or **Undo approve** | ✓ |
+| Click **Skip** or **Undo skip** | ✓ |
+| Click **Submit Review** | ✓ (immediate) |
+
+The MD is written as long as there is **any activity** on any patch — text feedback, an approval, or a skip. If you have only opened the tool and not interacted yet, no MD is written.
+
+### Copy current prompt bar
+
+If `REVIEW_FEEDBACK_<worktree-name>.md` already exists when you open the tool, a green **Copy current prompt** bar appears below the header. This lets you copy the prompt at any time without clicking Submit.
+
+## Prompt format
+
+`REVIEW_FEEDBACK_<worktree-name>.md` covers all patches in one file:
 
 ```
 You are being asked to revise your implementation in worktree firefox-my-feature.
 
-## Patch under review (Part 2 of 3):
+## Full patch series:
+- aaa111 my-feature - Part 1: Add WebIDL  [APPROVED — no issues]
 - bbb222 my-feature - Part 2: Implement logic
-
-## Full patch series for context:
-- aaa111 my-feature - Part 1: Add WebIDL
-- bbb222 my-feature - Part 2: Implement logic  ← THIS PATCH
 - ccc333 my-feature - Part 3: Fire events  [SKIPPED — not reviewed]
 
-## Reviewer feedback:
+---
 
-### dom/media/ContentPlaybackController.cpp : line 42
+## Part 2 (bbb222) — my-feature - Part 2: Implement logic
+
+### General feedback:
+
+Please use RAII for the lock throughout this patch.
+
+### Line-level feedback:
+
+#### dom/media/ContentPlaybackController.cpp : line 42
 [YOUR CODE] : MOZ_ASSERT(mBrowsingContext);
 [FEEDBACK]  : Add a message string — MOZ_ASSERT(mBrowsingContext, "must not be null")
 
+---
+
 ## Instructions:
-Address each FEEDBACK item above. This feedback is for Part 2 only — modify only
-files changed in that commit unless a fix strictly requires touching other code.
-After making changes, summarize what you changed for each feedback item.
+For each part with feedback above, apply changes only to files modified in that
+commit unless a fix strictly requires touching other code. After making changes,
+summarize what you changed for each feedback item.
 ```
 
-2. Shows the command to run in your terminal:
-
-**macOS / Linux:**
-```bash
-cd ~/firefox-my-feature && claude --print "$(cat REVIEW_FEEDBACK_bbb222.md)"
-```
-
-**Windows (PowerShell):**
-```powershell
-cd /d "C:\Users\you\firefox-my-feature" && powershell -Command "Get-Content 'REVIEW_FEEDBACK_bbb222.md' -Raw | claude --print -"
-```
-
-## How Claude distinguishes code from feedback
-
-The prompt format is the key. Every feedback item quotes the exact line Claude wrote (`[YOUR CODE]`) alongside your comment (`[FEEDBACK]`). Claude is told which patch to focus on and instructed not to touch other commits. Skipped patches are marked `[SKIPPED — not reviewed]` in the series list. The code diff itself is never included in the prompt — only the specific lines you commented on.
+- Approved patches are noted `[APPROVED — no issues]` in the series list — no feedback section
+- Skipped patches are noted `[SKIPPED — not reviewed]` — no feedback section
+- Only patches with actual feedback get a `## Part N` section
 
 ## Development
 
@@ -149,10 +167,10 @@ npm run test:coverage # coverage report
 ```
 
 Tests cover:
-- `parseDiff` — all diff parsing cases (added/removed/context lines, multiple files, binary files, new/deleted files, multiple hunks)
-- `parseWorktreeList` — worktree discovery parsing (single/multiple worktrees, detached HEAD, numeric names, empty output)
-- `formatPrompt` / `submitReview` — prompt structure, patch numbering, skipped patch markers, per-patch file output
-- Express routes — `GET /api/diff` and `POST /api/submit` with mocked git and claude modules, including `skippedHashes` forwarding
+- `parseDiff` — diff parsing (added/removed/context lines, multiple files, binary files, multiple hunks)
+- `parseWorktreeList` — worktree discovery parsing
+- `formatCombinedPrompt` / `submitReview` — combined prompt structure, approved/skipped markers, multi-patch feedback
+- Express routes — all API endpoints with mocked git and claude modules
 
 ## License
 

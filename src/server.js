@@ -43,7 +43,7 @@ function findAvailablePort(preferred) {
  * Create and return the Express app without starting the server.
  * Exported separately so tests can import it without side effects.
  */
-function createApp({ bugId, worktreePath, mainRepoPath }) {
+function createApp({ worktreeName, worktreePath, mainRepoPath }) {
   const app = express();
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -71,7 +71,7 @@ function createApp({ bugId, worktreePath, mainRepoPath }) {
     try {
       loadData();
       res.json({
-        bugId,
+        worktreeName,
         worktreePath,
         patches: patchesCache,
       });
@@ -101,7 +101,7 @@ function createApp({ bugId, worktreePath, mainRepoPath }) {
       const skippedHashes = Array.isArray(req.body.skippedHashes) ? req.body.skippedHashes : [];
       const { feedbackPath, command } = submitReview(
         worktreePath,
-        bugId,
+        worktreeName,
         patch,
         patchesCache,
         comments,
@@ -119,14 +119,14 @@ function createApp({ bugId, worktreePath, mainRepoPath }) {
 /**
  * Start the review web server.
  */
-async function startServer({ bugId, worktreePath, mainRepoPath }) {
-  const app = createApp({ bugId, worktreePath, mainRepoPath });
+async function startServer({ worktreeName, worktreePath, mainRepoPath }) {
+  const app = createApp({ worktreeName, worktreePath, mainRepoPath });
   const port = await findAvailablePort(7777);
 
   app.listen(port, '127.0.0.1', () => {
     const url = `http://localhost:${port}`;
     console.log(`\nfirefox-review server running at ${url}`);
-    console.log(`Reviewing ${bugId} — worktree: ${worktreePath}\n`);
+    console.log(`Reviewing ${worktreeName} — worktree: ${worktreePath}\n`);
     openBrowser(url);
   });
 }

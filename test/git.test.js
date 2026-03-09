@@ -218,14 +218,14 @@ describe('parseWorktreeList', () => {
     expect(parseWorktreeList(output, MAIN)).toEqual([]);
   });
 
-  test('returns a single worktree with extracted bugId', () => {
+  test('returns a single worktree with extracted worktreeName from path', () => {
     const output = porcelainOutput([
       { p: MAIN,                        branch: 'main' },
       { p: '/Users/user/firefox-bugABC', branch: 'bug-bugABC' },
     ]);
     const result = parseWorktreeList(output, MAIN);
     expect(result).toHaveLength(1);
-    expect(result[0].bugId).toBe('bugABC');
+    expect(result[0].worktreeName).toBe('bugABC');
     expect(result[0].path).toBe('/Users/user/firefox-bugABC');
     expect(result[0].branch).toBe('bug-bugABC');
   });
@@ -238,7 +238,7 @@ describe('parseWorktreeList', () => {
     ]);
     const result = parseWorktreeList(output, MAIN);
     expect(result).toHaveLength(2);
-    expect(result.map(w => w.bugId)).toEqual(['bugABC', 'bugXYZ']);
+    expect(result.map(w => w.worktreeName)).toEqual(['bugABC', 'bugXYZ']);
   });
 
   test('handles detached HEAD (no branch line)', () => {
@@ -250,13 +250,13 @@ describe('parseWorktreeList', () => {
     expect(result[0].branch).toBeNull();
   });
 
-  test('extracts bugId even for numeric IDs', () => {
+  test('extracts worktreeName for numeric IDs', () => {
     const output = porcelainOutput([
       { p: MAIN,                         branch: 'main' },
       { p: '/Users/user/firefox-1874041', branch: 'bug-1874041' },
     ]);
     const result = parseWorktreeList(output, MAIN);
-    expect(result[0].bugId).toBe('1874041');
+    expect(result[0].worktreeName).toBe('1874041');
   });
 
   test('returns empty array for empty output', () => {

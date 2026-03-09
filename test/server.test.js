@@ -62,7 +62,7 @@ const PATCHES = [
 
 function makeApp() {
   return createApp({
-    bugId: 'bugABC',
+    worktreeName: 'bugABC',
     worktreePath: '/fake/worktree',
     mainRepoPath: '/fake/firefox',
   });
@@ -80,7 +80,7 @@ describe('GET /api/diff', () => {
     const app = makeApp();
     const res = await request(app).get('/api/diff');
     expect(res.status).toBe(200);
-    expect(res.body.bugId).toBe('bugABC');
+    expect(res.body.worktreeName).toBe('bugABC');
     expect(res.body.worktreePath).toBe('/fake/worktree');
     expect(res.body.patches).toHaveLength(2);
     expect(res.body.patches[0].hash).toBe('aaa111');
@@ -147,9 +147,9 @@ describe('POST /api/submit', () => {
     const app = makeApp();
     await request(app).post('/api/submit').send(validBody);
     expect(submitReview).toHaveBeenCalledTimes(1);
-    const [worktreePath, bugId, patch, allPatches, comments] = submitReview.mock.calls[0];
+    const [worktreePath, worktreeName, patch, allPatches, comments] = submitReview.mock.calls[0];
     expect(worktreePath).toBe('/fake/worktree');
-    expect(bugId).toBe('bugABC');
+    expect(worktreeName).toBe('bugABC');
     expect(patch.hash).toBe('aaa111');
     expect(allPatches).toHaveLength(2);
     expect(comments[0].text).toBe('Use camelCase');

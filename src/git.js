@@ -209,7 +209,7 @@ function getDiffPerCommit(worktreePath, mainRepoPath) {
  *
  * @param {string} output - stdout from `git worktree list --porcelain`
  * @param {string} mainRepoPath - path to exclude (the main repo itself)
- * @returns {Array<{ path: string, branch: string|null, bugId: string }>}
+ * @returns {Array<{ path: string, branch: string|null, worktreeName: string }>}
  */
 function parseWorktreeList(output, mainRepoPath) {
   const blocks = output.trim().split(/\n\n+/);
@@ -230,8 +230,8 @@ function parseWorktreeList(output, mainRepoPath) {
     .map((wt) => {
       const basename = path.basename(wt.path);
       const match = basename.match(/^firefox-(.+)$/);
-      const bugId = match ? match[1] : basename;
-      return { path: wt.path, branch: wt.branch, bugId };
+      const worktreeName = match ? match[1] : basename;
+      return { path: wt.path, branch: wt.branch, worktreeName };
     });
 }
 
@@ -239,7 +239,7 @@ function parseWorktreeList(output, mainRepoPath) {
  * Discover all non-main Firefox worktrees registered with the main repo.
  *
  * @param {string} mainRepoPath - path to ~/firefox
- * @returns {Array<{ path: string, branch: string|null, bugId: string }>}
+ * @returns {Array<{ path: string, branch: string|null, worktreeName: string }>}
  */
 function discoverWorktrees(mainRepoPath) {
   const output = execSync(`git -C "${mainRepoPath}" worktree list --porcelain`, {

@@ -112,6 +112,36 @@ describe('formatPrompt', () => {
     expect(out).not.toContain('SKIPPED');
   });
 
+  test('marks approved patches with [APPROVED] in the series list', () => {
+    const out = formatPrompt('bugABC', patch1, allPatches, comments, [], '', [patch3.hash]);
+    const lines = out.split('\n');
+    const approvedLine = lines.find(l => l.includes(patch3.hash));
+    expect(approvedLine).toContain('[APPROVED — no issues]');
+  });
+
+  test('does not mark the current patch as approved even if its hash is in approvedHashes', () => {
+    const out = formatPrompt('bugABC', patch2, allPatches, comments, [], '', [patch2.hash]);
+    const seriesSection = out.slice(out.indexOf('## Full patch series'));
+    const lines = seriesSection.split('\n');
+    const currentLine = lines.find(l => l.includes(patch2.hash));
+    expect(currentLine).toContain('← THIS PATCH');
+    expect(currentLine).not.toContain('APPROVED');
+  });
+
+  test('approved takes lower priority than skipped for other patches', () => {
+    // skipped wins — patch3 is in both lists, skipped takes precedence
+    const out = formatPrompt('bugABC', patch1, allPatches, comments, [patch3.hash], '', [patch3.hash]);
+    const lines = out.split('\n');
+    const line = lines.find(l => l.includes(patch3.hash));
+    expect(line).toContain('[SKIPPED');
+    expect(line).not.toContain('[APPROVED');
+  });
+
+  test('approvedHashes defaults to empty — no APPROVED markers when omitted', () => {
+    const out = formatPrompt('bugABC', patch1, allPatches, comments);
+    expect(out).not.toContain('APPROVED');
+  });
+
   test('includes general feedback section when generalComment is provided', () => {
     const out = formatPrompt('bugABC', patch1, allPatches, comments, [], 'Please use RAII throughout.');
     expect(out).toContain('## General feedback for Part 1:');
@@ -209,6 +239,14 @@ describe('submitReview', () => {
       path.join(tmpDir, `REVIEW_FEEDBACK_${patch1.hash}.md`), 'utf8'
     );
     expect(content).toContain('[SKIPPED');
+  });
+
+  test('passes approvedHashes to formatPrompt — content reflects approved patches', () => {
+    submitReview(tmpDir, 'bugABC', patch1, allPatches, comments, [], '', [patch3.hash]);
+    const content = fs.readFileSync(
+      path.join(tmpDir, `REVIEW_FEEDBACK_${patch1.hash}.md`), 'utf8'
+    );
+    expect(content).toContain('[APPROVED — no issues]');
   });
 
   test('each patch gets its own file — no clobbering', () => {

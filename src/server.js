@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const net = require('net');
 const os = require('os');
+const fs = require('fs');
 const { execSync } = require('child_process');
 const { getDiffPerCommit } = require('./git');
 const { submitReview } = require('./claude');
@@ -80,6 +81,31 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
     }
   });
 
+  // GET /api/state — load persisted review state
+  app.get('/api/state', (req, res) => {
+    const statePath = path.join(worktreePath, `REVIEW_STATE_${worktreeName}.json`);
+    try {
+      if (fs.existsSync(statePath)) {
+        res.json(JSON.parse(fs.readFileSync(statePath, 'utf8')));
+      } else {
+        res.json({});
+      }
+    } catch {
+      res.json({});
+    }
+  });
+
+  // POST /api/state — persist review state
+  app.post('/api/state', (req, res) => {
+    const statePath = path.join(worktreePath, `REVIEW_STATE_${worktreeName}.json`);
+    try {
+      fs.writeFileSync(statePath, JSON.stringify(req.body, null, 2), 'utf8');
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/submit — write REVIEW_FEEDBACK_<hash>.md and return the claude command
   app.post('/api/submit', (req, res) => {
     const { patchHash, comments } = req.body;
@@ -105,6 +131,7 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
       }
 
       const skippedHashes = Array.isArray(req.body.skippedHashes) ? req.body.skippedHashes : [];
+      const approvedHashes = Array.isArray(req.body.approvedHashes) ? req.body.approvedHashes : [];
       const { feedbackPath, command } = submitReview(
         worktreePath,
         worktreeName,
@@ -112,7 +139,8 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
         patchesCache,
         comments,
         skippedHashes,
-        generalComment
+        generalComment,
+        approvedHashes
       );
       res.json({ ok: true, feedbackPath, command });
     } catch (err) {

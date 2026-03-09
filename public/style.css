@@ -128,6 +128,9 @@ body {
 .patch-tab.skipped .tab-msg { text-decoration: line-through; }
 .tab-skipped-icon { color: #6e7681; margin-left: 4px; }
 
+.patch-tab.approved .tab-part { color: #3fb950; }
+.tab-approved-icon { color: #3fb950; margin-left: 4px; }
+
 .tab-badge {
   display: inline-block;
   background: #f0883e;
@@ -227,6 +230,40 @@ body {
 .general-comment-textarea:disabled { opacity: 0.4; cursor: not-allowed; }
 .general-comment-textarea::placeholder { color: #484f58; }
 
+/* ── Patch heading actions (approve + skip button group) ── */
+.patch-heading-actions {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Approve / Unapprove buttons ── */
+.btn-approve {
+  background: transparent;
+  color: #3fb950;
+  border: 1px solid #3fb95055;
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-approve:hover { background: #3fb95022; }
+
+.btn-unapprove {
+  background: #3fb95022;
+  color: #3fb950;
+  border: 1px solid #3fb95066;
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-unapprove:hover { background: #3fb95033; }
+
 /* ── Skip / Unskip buttons ── */
 .btn-skip {
   background: transparent;
@@ -236,8 +273,6 @@ body {
   padding: 3px 12px;
   font-size: 12px;
   cursor: pointer;
-  margin-left: auto;
-  flex: 0 0 auto;
 }
 
 .btn-skip:hover { background: #21262d; color: #c9d1d9; }
@@ -250,8 +285,6 @@ body {
   padding: 3px 12px;
   font-size: 12px;
   cursor: pointer;
-  margin-left: auto;
-  flex: 0 0 auto;
 }
 
 .btn-unskip:hover { background: #f0883e33; }
@@ -274,6 +307,32 @@ body {
 
 .patch-heading-skipped .patch-heading-msg { text-decoration: line-through; opacity: 0.5; }
 .patch-heading-skipped .patch-heading-label { background: #484f58; }
+
+.patch-heading-approved .patch-heading-label { background: #3fb950; color: #0d1117; }
+
+/* ── Approve notice ── */
+.approve-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #0d2a17;
+  border: 1px dashed #3fb95055;
+  border-radius: 6px;
+  padding: 20px 24px;
+  color: #3fb950;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.approve-notice-icon { font-size: 20px; }
+
+/* ── Autosave status ── */
+#autosave-status {
+  font-size: 11px;
+  color: #484f58;
+  min-width: 60px;
+  text-align: right;
+}
 
 /* ── File block ── */
 .file-block {

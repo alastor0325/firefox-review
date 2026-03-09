@@ -14,8 +14,9 @@ const path = require('path');
  * @param {string[]} skippedHashes - hashes of patches the reviewer chose to skip
  * @returns {string}
  */
-function formatPrompt(worktreeName, patch, allPatches, comments, skippedHashes = [], generalComment = '') {
+function formatPrompt(worktreeName, patch, allPatches, comments, skippedHashes = [], generalComment = '', approvedHashes = []) {
   const skipped = new Set(skippedHashes);
+  const approved = new Set(approvedHashes);
   const patchNum = allPatches.findIndex((p) => p.hash === patch.hash) + 1;
   const totalPatches = allPatches.length;
 
@@ -24,6 +25,7 @@ function formatPrompt(worktreeName, patch, allPatches, comments, skippedHashes =
       let suffix = '';
       if (p.hash === patch.hash) suffix = '  ← THIS PATCH';
       else if (skipped.has(p.hash)) suffix = '  [SKIPPED — not reviewed]';
+      else if (approved.has(p.hash)) suffix = '  [APPROVED — no issues]';
       return `- ${p.hash} ${p.message}${suffix}`;
     })
     .join('\n');
@@ -69,8 +71,8 @@ All feedback above is scoped to Part ${patchNum} only — modify only files chan
  * @param {string[]} skippedHashes
  * @returns {{ feedbackPath: string, command: string }}
  */
-function submitReview(worktreePath, worktreeName, patch, allPatches, comments, skippedHashes = [], generalComment = '') {
-  const prompt = formatPrompt(worktreeName, patch, allPatches, comments, skippedHashes, generalComment);
+function submitReview(worktreePath, worktreeName, patch, allPatches, comments, skippedHashes = [], generalComment = '', approvedHashes = []) {
+  const prompt = formatPrompt(worktreeName, patch, allPatches, comments, skippedHashes, generalComment, approvedHashes);
   const filename = `REVIEW_FEEDBACK_${patch.hash}.md`;
   const feedbackPath = path.join(worktreePath, filename);
   fs.writeFileSync(feedbackPath, prompt, 'utf8');

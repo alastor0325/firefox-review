@@ -11,62 +11,87 @@ const { discoverWorktrees } = require('../src/git');
 const mainRepoPath = path.join(os.homedir(), 'firefox');
 
 /**
- * Show a numbered list of worktrees and prompt the user to pick one.
- * Returns the selected worktree object, or exits on invalid input.
+ * Build the full list of reviewable entries:
+ * the main repo first, then all registered worktrees.
  */
-async function promptSelection(worktrees) {
-  console.log('\nAvailable worktrees:\n');
-  worktrees.forEach((wt, i) => {
-    const branch = wt.branch ? `  (${wt.branch})` : '';
-    console.log(`  ${i + 1}.  firefox-${wt.worktreeName}${branch}`);
+function buildEntries() {
+  const entries = [];
+
+  // Always include the main repo itself as an option
+  if (fs.existsSync(mainRepoPath)) {
+    entries.push({
+      path: mainRepoPath,
+      branch: null,
+      worktreeName: path.basename(mainRepoPath),
+      isMain: true,
+    });
+  }
+
+  // Append all worktrees registered with the main repo
+  if (fs.existsSync(mainRepoPath)) {
+    try {
+      entries.push(...discoverWorktrees(mainRepoPath));
+    } catch {
+      // Ignore if worktree list can't be read
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Show a numbered list and prompt the user to pick one.
+ */
+async function promptSelection(entries) {
+  console.log('\nAvailable repos / worktrees:\n');
+  entries.forEach((entry, i) => {
+    const label = entry.isMain
+      ? `${entry.worktreeName}  (main repo)`
+      : `firefox-${entry.worktreeName}`;
+    const branch = entry.branch ? `  (${entry.branch})` : '';
+    console.log(`  ${i + 1}.  ${label}${branch}`);
   });
   console.log('');
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(`Select a worktree [1-${worktrees.length}]: `, (answer) => {
+    rl.question(`Select [1-${entries.length}]: `, (answer) => {
       rl.close();
       const idx = parseInt(answer, 10) - 1;
-      if (isNaN(idx) || idx < 0 || idx >= worktrees.length) {
+      if (isNaN(idx) || idx < 0 || idx >= entries.length) {
         console.error(`Invalid selection: "${answer}"`);
         process.exit(1);
       }
-      resolve(worktrees[idx]);
+      resolve(entries[idx]);
     });
   });
 }
 
 async function main() {
-  let worktreeName = process.argv[2];
+  const argName = process.argv[2];
 
-  if (!worktreeName) {
-    if (!fs.existsSync(mainRepoPath)) {
-      console.error(`Error: Main Firefox repo not found at ${mainRepoPath}`);
+  let worktreeName;
+  let worktreePath;
+
+  if (argName) {
+    // Explicit name given — reconstruct path as ~/firefox-<name>
+    worktreeName = argName;
+    worktreePath = path.join(os.homedir(), `firefox-${worktreeName}`);
+  } else {
+    // No arg — show picker with main repo + all worktrees
+    const entries = buildEntries();
+
+    if (entries.length === 0) {
+      console.error('No Firefox repos or worktrees found under ~/firefox.');
       console.error('Usage: firefox-review <worktree-name>');
       process.exit(1);
     }
 
-    let worktrees;
-    try {
-      worktrees = discoverWorktrees(mainRepoPath);
-    } catch (err) {
-      console.error(`Error reading worktrees: ${err.message}`);
-      process.exit(1);
-    }
-
-    if (worktrees.length === 0) {
-      console.error('No Firefox worktrees found.');
-      console.error('Create one first, or specify the name directly:');
-      console.error('  firefox-review <worktree-name>');
-      process.exit(1);
-    }
-
-    const selected = await promptSelection(worktrees);
+    const selected = await promptSelection(entries);
     worktreeName = selected.worktreeName;
+    worktreePath = selected.path;
     console.log('');
   }
-
-  const worktreePath = path.join(os.homedir(), `firefox-${worktreeName}`);
 
   if (!fs.existsSync(worktreePath)) {
     console.error(`Error: Worktree not found at ${worktreePath}`);

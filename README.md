@@ -53,18 +53,20 @@ firefox-review my-feature
 firefox-review experiment
 ```
 
+`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`.
+
 ### Without an argument — interactive picker
 
-If you omit the name, `firefox-review` discovers all registered worktrees from `~/firefox` and shows an interactive list:
+If you omit the name, `firefox-review` lists the main repo and all registered worktrees for you to choose from:
 
 ```
-Available worktrees:
+Available repos / worktrees:
 
-  1.  firefox-my-feature    (feature-branch)
-  2.  firefox-experiment    (main)
-  3.  firefox-1874041       (bug-1874041)
+  1.  firefox  (main repo)
+  2.  firefox-my-feature    (feature-branch)
+  3.  firefox-experiment    (detached)
 
-Select a worktree [1-3]:
+Select [1-3]:
 ```
 
 Type the number and press Enter. The browser opens at `http://localhost:7777` automatically on macOS, Linux, and Windows.

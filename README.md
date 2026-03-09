@@ -173,9 +173,10 @@ Please use RAII for the lock throughout this patch.
 ---
 
 ## Instructions:
-For each part with feedback above, apply changes only to files modified in that
-commit unless a fix strictly requires touching other code. After making changes,
-summarize what you changed for each feedback item.
+Address each piece of feedback in the commit it belongs to. For each part with feedback:
+1. Apply the changes only to files modified in that commit, unless a fix strictly requires touching other code.
+2. Amend the changes directly into that commit (do not create new commits). Use interactive rebase if the commit is not the tip of the branch.
+3. After all amendments are done, summarize what you changed for each feedback item.
 ```
 
 - Approved patches are noted `[APPROVED — no issues]` in the series list; they still get a feedback section if they have comments

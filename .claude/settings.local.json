@@ -5,7 +5,8 @@
       "Bash(firefox-review:*)",
       "Bash(npm install:*)",
       "Bash(npm test:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(grep:*)"
     ]
   }
 }

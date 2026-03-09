@@ -95,17 +95,19 @@ body {
 #patch-tabs-bar {
   background: #161b22;
   border-bottom: 1px solid #30363d;
-  padding: 0 24px;
   position: sticky;
   top: 65px;   /* below header */
   z-index: 99;
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #484f58 #161b22;
 }
 
 #patch-tabs {
   display: flex;
   gap: 0;
   min-width: max-content;
+  padding: 0 24px;
 }
 
 .patch-tab {

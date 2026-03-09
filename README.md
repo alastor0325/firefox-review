@@ -4,17 +4,17 @@ A local web UI for reviewing Claude-generated Firefox patches in git worktrees.
 
 ## The problem
 
-When you use Claude Code to implement a Firefox bug, the patches land in a dedicated git worktree (e.g. `~/firefox-bugABC`). Reviewing those changes and sending feedback back to Claude is awkward — there's no clean way to annotate specific lines and hand the structured feedback off without manual copy-pasting.
+When you use Claude Code to implement a Firefox bug, the patches land in a dedicated git worktree (e.g. `~/firefox-my-feature`). Reviewing those changes and sending feedback back to Claude is awkward — there's no clean way to annotate specific lines and hand the structured feedback off without manual copy-pasting.
 
 `firefox-review` solves this with a GitHub-style diff viewer that runs locally, lets you leave inline comments per patch, and generates a structured prompt that Claude can act on directly.
 
 ## How it works
 
 ```
-firefox-review bugABC
+firefox-review [worktree-name]
 ```
 
-1. Finds the worktree at `~/firefox-bugABC`
+1. Finds the worktree at `~/firefox-<worktree-name>`
 2. Computes the diff — splits each commit into its own tab (Part 1, Part 2, …)
 3. Starts a local web server and opens the diff viewer in your browser
 4. You switch between patch tabs and click any diff line to leave an inline comment
@@ -34,26 +34,46 @@ npm link          # makes `firefox-review` available globally
 **Expected directory layout:**
 
 ```
-~/firefox/              ← main Firefox repo (central)
-~/firefox-bugABC/       ← Claude-generated worktree for bugABC
-~/firefox-bugXYZ/       ← another worktree
+~/firefox/               ← main Firefox repo (central)
+~/firefox-my-feature/    ← a Claude-generated worktree
+~/firefox-experiment/    ← another worktree
 ```
+
+The worktree name can be anything — a bug number, a feature name, an experiment label, etc.
 
 ## Usage
 
+### With a worktree name
+
 ```bash
-firefox-review <bug-id>
+firefox-review <worktree-name>
 
 # Examples:
-firefox-review bugABC
-firefox-review bugXYZ
+firefox-review my-feature
+firefox-review experiment
 ```
 
-The browser opens at `http://localhost:7777` automatically on macOS, Linux, and Windows.
+### Without an argument — interactive picker
 
-### Reviewing per patch
+If you omit the name, `firefox-review` discovers all registered worktrees from `~/firefox` and shows an interactive list:
 
-When a bug has multiple commits, the UI shows **tabs** at the top — one per patch:
+```
+Available worktrees:
+
+  1.  firefox-my-feature    (feature-branch)
+  2.  firefox-experiment    (main)
+  3.  firefox-1874041       (bug-1874041)
+
+Select a worktree [1-3]:
+```
+
+Type the number and press Enter. The browser opens at `http://localhost:7777` automatically on macOS, Linux, and Windows.
+
+## Reviewing
+
+### Per-patch tabs
+
+When a worktree has multiple commits, the UI shows **tabs** at the top — one per patch:
 
 ```
 [ Part 1: Add WebIDL ]  [ Part 2: Implement logic ]  [ Part 3: Fire events ]
@@ -62,6 +82,10 @@ When a bug has multiple commits, the UI shows **tabs** at the top — one per pa
 - Switch tabs to review each patch independently
 - Comments are scoped per patch — switching tabs never loses your work
 - The tab shows a badge counter once you add comments to it
+
+### Skipping patches
+
+If a patch doesn't need review, click **"Skip this patch"** in the patch heading. The tab turns gray with a strikethrough and the diff is hidden. Click **"Undo skip"** to restore it. Skipped patches are noted in the prompt sent to Claude so it knows which commits weren't reviewed.
 
 ### Adding comments
 
@@ -76,15 +100,15 @@ After reviewing a patch, click **"Submit Review for Part N to Claude"**. The too
 1. Writes `REVIEW_FEEDBACK_<hash>.md` to the worktree (one file per patch, no clobbering):
 
 ```
-You are being asked to revise Part 2 of 3 of your implementation of bugABC.
+You are being asked to revise your implementation in worktree firefox-my-feature.
 
-## Patch under review (Part 2):
-- bbb222 bugABC - Part 2: Implement logic  ← THIS PATCH
+## Patch under review (Part 2 of 3):
+- bbb222 my-feature - Part 2: Implement logic
 
 ## Full patch series for context:
-- aaa111 bugABC - Part 1: Add WebIDL
-- bbb222 bugABC - Part 2: Implement logic  ← THIS PATCH
-- ccc333 bugABC - Part 3: Fire events
+- aaa111 my-feature - Part 1: Add WebIDL
+- bbb222 my-feature - Part 2: Implement logic  ← THIS PATCH
+- ccc333 my-feature - Part 3: Fire events  [SKIPPED — not reviewed]
 
 ## Reviewer feedback:
 
@@ -102,17 +126,17 @@ After making changes, summarize what you changed for each feedback item.
 
 **macOS / Linux:**
 ```bash
-cd ~/firefox-bugABC && claude --print "$(cat REVIEW_FEEDBACK_bbb222.md)"
+cd ~/firefox-my-feature && claude --print "$(cat REVIEW_FEEDBACK_bbb222.md)"
 ```
 
 **Windows (PowerShell):**
 ```powershell
-cd /d "C:\Users\you\firefox-bugABC" && powershell -Command "Get-Content 'REVIEW_FEEDBACK_bbb222.md' -Raw | claude --print -"
+cd /d "C:\Users\you\firefox-my-feature" && powershell -Command "Get-Content 'REVIEW_FEEDBACK_bbb222.md' -Raw | claude --print -"
 ```
 
 ## How Claude distinguishes code from feedback
 
-The prompt format is the key. Every feedback item quotes the exact line Claude wrote (`[YOUR CODE]`) alongside your comment (`[FEEDBACK]`). Claude is told which patch to focus on and instructed not to touch other commits. The code diff itself is never included in the prompt — only the specific lines you commented on.
+The prompt format is the key. Every feedback item quotes the exact line Claude wrote (`[YOUR CODE]`) alongside your comment (`[FEEDBACK]`). Claude is told which patch to focus on and instructed not to touch other commits. Skipped patches are marked `[SKIPPED — not reviewed]` in the series list. The code diff itself is never included in the prompt — only the specific lines you commented on.
 
 ## Development
 
@@ -123,9 +147,10 @@ npm run test:coverage # coverage report
 ```
 
 Tests cover:
-- `parseDiff` — unit tests for all diff parsing cases (added/removed/context lines, multiple files, binary files, new/deleted files, multiple hunks)
-- `formatPrompt` / `submitReview` — unit tests for prompt structure and file output
-- Express routes — integration tests for `GET /api/diff` and `POST /api/submit` with mocked git and claude modules
+- `parseDiff` — all diff parsing cases (added/removed/context lines, multiple files, binary files, new/deleted files, multiple hunks)
+- `parseWorktreeList` — worktree discovery parsing (single/multiple worktrees, detached HEAD, numeric names, empty output)
+- `formatPrompt` / `submitReview` — prompt structure, patch numbering, skipped patch markers, per-patch file output
+- Express routes — `GET /api/diff` and `POST /api/submit` with mocked git and claude modules, including `skippedHashes` forwarding
 
 ## License
 

@@ -169,6 +169,22 @@ describe('formatCombinedPrompt', () => {
     const out = formatCombinedPrompt('bugABC', allPatches, makeFeedback());
     expect(out).toContain('## Instructions:');
   });
+
+  test('renders commit message feedback as a dedicated section', () => {
+    const commitComment = { file: '__commit__', line: 0, lineContent: 'bugABC - Part 1: Add WebIDL', text: 'Fix commit message format' };
+    const feedback = makeFeedback([{ hash: 'aaa111', comments: [commitComment] }]);
+    const out = formatCombinedPrompt('bugABC', allPatches, feedback);
+    expect(out).toContain('### Commit message feedback:');
+    expect(out).toContain('[FEEDBACK]: Fix commit message format');
+  });
+
+  test('commit message comment does not appear in line-level feedback', () => {
+    const commitComment = { file: '__commit__', line: 0, lineContent: 'bugABC - Part 1: Add WebIDL', text: 'Fix commit message format' };
+    const feedback = makeFeedback([{ hash: 'aaa111', comments: [commitComment] }]);
+    const out = formatCombinedPrompt('bugABC', allPatches, feedback);
+    expect(out).not.toContain('__commit__');
+    expect(out).not.toContain('### Line-level feedback:');
+  });
 });
 
 // ── submitReview ───────────────────────────────────────────────────────────

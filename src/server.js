@@ -31,7 +31,7 @@ function openBrowser(url) {
 function findAvailablePort(preferred) {
   return new Promise((resolve) => {
     const server = net.createServer();
-    server.listen(preferred, () => {
+    server.listen(preferred, '127.0.0.1', () => {
       const port = server.address().port;
       server.close(() => resolve(port));
     });
@@ -138,4 +138,4 @@ async function startServer({ worktreeName, worktreePath, mainRepoPath }) {
   });
 }
 
-module.exports = { startServer, createApp };
+module.exports = { startServer, createApp, findAvailablePort };

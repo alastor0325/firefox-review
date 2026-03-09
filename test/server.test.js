@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const net = require('net');
 
 // ── Mock git.js and claude.js before requiring server.js ──────────────────
 
@@ -18,7 +19,7 @@ jest.mock('../src/claude', () => ({
 
 const { getDiffPerCommit } = require('../src/git');
 const { submitReview }     = require('../src/claude');
-const { createApp }        = require('../src/server');
+const { createApp, findAvailablePort } = require('../src/server');
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -237,5 +238,25 @@ describe('POST /api/submit', () => {
     const res = await request(app).post('/api/submit').send(validBody);
     expect(res.status).toBe(500);
     expect(res.body.error).toContain('write failed');
+  });
+});
+
+// ── findAvailablePort ──────────────────────────────────────────────────────
+
+describe('findAvailablePort', () => {
+  test('returns the preferred port when it is free on 127.0.0.1', async () => {
+    const port = await findAvailablePort(19999);
+    expect(port).toBe(19999);
+  });
+
+  test('skips to next port when preferred is already bound on 127.0.0.1', async () => {
+    const blocker = net.createServer();
+    await new Promise((resolve) => blocker.listen(19998, '127.0.0.1', resolve));
+    try {
+      const port = await findAvailablePort(19998);
+      expect(port).toBe(19999);
+    } finally {
+      await new Promise((resolve) => blocker.close(resolve));
+    }
   });
 });

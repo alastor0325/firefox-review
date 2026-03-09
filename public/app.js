@@ -314,9 +314,20 @@ function renderCommitMessageSection(container, patchHash, commitMessage, disable
   header.textContent = 'Commit message';
   box.appendChild(header);
 
+  const firstNewline = commitMessage.indexOf('\n');
+  const subject = firstNewline >= 0 ? commitMessage.slice(0, firstNewline).trim() : commitMessage;
+  const bodyText = firstNewline >= 0 ? commitMessage.slice(firstNewline).trim() : '';
+
+  const subjectEl = document.createElement('div');
+  subjectEl.className = 'commit-msg-subject';
+  subjectEl.textContent = subject;
+  box.appendChild(subjectEl);
+
   const msgEl = document.createElement('div');
-  msgEl.className = 'commit-msg-text';
-  msgEl.textContent = commitMessage;
+  msgEl.className = 'commit-msg-text' + (bodyText ? '' : ' commit-msg-text-empty');
+  if (bodyText) {
+    msgEl.textContent = bodyText;
+  }
   box.appendChild(msgEl);
 
   const commentEl = document.createElement('div');
@@ -374,9 +385,11 @@ function renderCommitMessageSection(container, patchHash, commitMessage, disable
   }
 
   if (!disabled) {
-    msgEl.style.cursor = 'pointer';
-    msgEl.title = 'Click to leave feedback on this commit message';
-    msgEl.addEventListener('click', showForm);
+    for (const el of [subjectEl, msgEl]) {
+      el.style.cursor = 'pointer';
+      el.title = 'Click to leave feedback on this commit message';
+      el.addEventListener('click', showForm);
+    }
   }
 
   refreshComment();

@@ -11,13 +11,14 @@ const net = require('net');
 
 jest.mock('../src/git', () => ({
   getDiffPerCommit: jest.fn(),
+  getDiffForCommit: jest.fn(),
 }));
 
 jest.mock('../src/claude', () => ({
   submitReview: jest.fn(),
 }));
 
-const { getDiffPerCommit } = require('../src/git');
+const { getDiffPerCommit, getDiffForCommit } = require('../src/git');
 const { submitReview }     = require('../src/claude');
 const { createApp, findAvailablePort } = require('../src/server');
 
@@ -317,6 +318,50 @@ describe('GET /api/state', () => {
     await request(app).post('/api/state').send({ approved: ['aaa111'], skipped: [], comments: {}, generalComments: {} });
     const res = await request(app).get('/api/state');
     expect(res.body.approved).toEqual(['aaa111']);
+  });
+});
+
+// ── GET /api/patchdiff/:hash ───────────────────────────────────────────────
+
+describe('GET /api/patchdiff/:hash', () => {
+  beforeEach(() => {
+    getDiffPerCommit.mockReset();
+    getDiffForCommit.mockReset();
+    getDiffPerCommit.mockReturnValue(PATCHES);
+  });
+
+  const SAMPLE_FILES = [
+    {
+      oldPath: 'dom/media/Foo.webidl',
+      newPath: 'dom/media/Foo.webidl',
+      binary: false,
+      hunks: [],
+    },
+  ];
+
+  test('returns 200 with hash and files on valid hash', async () => {
+    getDiffForCommit.mockReturnValue(SAMPLE_FILES);
+    const app = makeApp();
+    const res = await request(app).get('/api/patchdiff/abc1234');
+    expect(res.status).toBe(200);
+    expect(res.body.hash).toBe('abc1234');
+    expect(res.body.files).toHaveLength(1);
+    expect(res.body.files[0].newPath).toBe('dom/media/Foo.webidl');
+  });
+
+  test('returns 400 for invalid hash format', async () => {
+    const app = makeApp();
+    const res = await request(app).get('/api/patchdiff/not-a-hash!!');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid hash format');
+  });
+
+  test('returns 404 when git throws', async () => {
+    getDiffForCommit.mockImplementation(() => { throw new Error('bad object abc9999'); });
+    const app = makeApp();
+    const res = await request(app).get('/api/patchdiff/abc9999');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('abc9999');
   });
 });
 

@@ -6,7 +6,7 @@ const net = require('net');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getDiffPerCommit } = require('./git');
+const { getDiffPerCommit, getDiffForCommit } = require('./git');
 const { submitReview } = require('./claude');
 
 /**
@@ -148,6 +148,20 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
       res.json({ ok: true, feedbackPath, prompt });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/patchdiff/:hash — return diff for a single commit hash (for revision comparison)
+  app.get('/api/patchdiff/:hash', (req, res) => {
+    const { hash } = req.params;
+    if (!/^[0-9a-f]{4,40}$/i.test(hash)) {
+      return res.status(400).json({ error: 'Invalid hash format.' });
+    }
+    try {
+      const files = getDiffForCommit(worktreePath, hash);
+      res.json({ hash, files });
+    } catch (err) {
+      res.status(404).json({ error: `Commit ${hash} not found: ${err.message}` });
     }
   });
 

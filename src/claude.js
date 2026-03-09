@@ -48,7 +48,14 @@ function formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHash
         ? `### General feedback:\n\n${general}\n`
         : '';
 
-      const lineFeedbackItems = fb.comments
+      const commitComment = fb.comments.find((c) => c.file === '__commit__');
+      const lineComments  = fb.comments.filter((c) => c.file !== '__commit__');
+
+      const commitSection = commitComment
+        ? `### Commit message feedback:\n\n[FEEDBACK]: ${commitComment.text}\n`
+        : '';
+
+      const lineFeedbackItems = lineComments
         .map((c) => [
           `#### ${c.file} : line ${c.line}`,
           `[YOUR CODE] : ${c.lineContent}`,
@@ -64,7 +71,7 @@ function formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHash
         ? '\n⚠ This patch was denied — it requires significant changes.\n'
         : '';
 
-      return `## Part ${patchNum} (${p.hash}) — ${p.message}\n${deniedNote}\n${generalSection}${lineSection}`;
+      return `## Part ${patchNum} (${p.hash}) — ${p.message}\n${deniedNote}\n${commitSection}${generalSection}${lineSection}`;
     })
     .join('\n---\n\n');
 

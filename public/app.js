@@ -301,6 +301,88 @@ function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
   });
 }
 
+// ── Commit message comment section ─────────────────────────────────────────
+const COMMIT_FILE = '__commit__';
+const COMMIT_KEY  = 'msg';
+
+function renderCommitMessageSection(container, patchHash, commitMessage, disabled) {
+  const box = document.createElement('div');
+  box.className = 'commit-msg-block';
+
+  const header = document.createElement('div');
+  header.className = 'commit-msg-header';
+  header.textContent = 'Commit message';
+  box.appendChild(header);
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'commit-msg-text';
+  msgEl.textContent = commitMessage;
+  box.appendChild(msgEl);
+
+  const commentEl = document.createElement('div');
+  box.appendChild(commentEl);
+
+  const formEl = document.createElement('div');
+  box.appendChild(formEl);
+
+  function refreshComment() {
+    commentEl.innerHTML = '';
+    const c = getComment(patchHash, COMMIT_FILE, COMMIT_KEY);
+    if (!c) return;
+    commentEl.className = 'comment-display-row';
+    commentEl.innerHTML = `
+      <div class="comment-display-inner">
+        <div style="flex:1">
+          <div class="comment-meta">Commit message</div>
+          <div class="comment-body">${escapeHtml(c.text)}</div>
+        </div>
+        <button class="btn-delete-comment" title="Delete comment">×</button>
+      </div>`;
+    commentEl.querySelector('.btn-delete-comment').addEventListener('click', () => {
+      deleteComment(patchHash, COMMIT_FILE, COMMIT_KEY);
+      refreshComment();
+    });
+    const body = commentEl.querySelector('.comment-body');
+    body.style.cursor = 'pointer';
+    body.addEventListener('click', showForm);
+  }
+
+  function showForm() {
+    if (disabled) return;
+    formEl.innerHTML = `
+      <div class="comment-form-inner">
+        <textarea placeholder="Leave feedback on this commit message…" autofocus></textarea>
+        <div class="comment-actions">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-save">Save comment</button>
+        </div>
+      </div>`;
+    const existing = getComment(patchHash, COMMIT_FILE, COMMIT_KEY);
+    const ta = formEl.querySelector('textarea');
+    if (existing) ta.value = existing.text;
+    ta.focus();
+    formEl.querySelector('.btn-cancel').addEventListener('click', () => { formEl.innerHTML = ''; });
+    formEl.querySelector('.btn-save').addEventListener('click', () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      setComment(patchHash, COMMIT_FILE, COMMIT_KEY, {
+        patchHash, file: COMMIT_FILE, line: 0, lineContent: commitMessage, text,
+      });
+      formEl.innerHTML = '';
+      refreshComment();
+    });
+  }
+
+  if (!disabled) {
+    msgEl.style.cursor = 'pointer';
+    msgEl.title = 'Click to leave feedback on this commit message';
+    msgEl.addEventListener('click', showForm);
+  }
+
+  refreshComment();
+  container.appendChild(box);
+}
+
 // ── Diff rendering ─────────────────────────────────────────────────────────
 function countStats(hunks) {
   let added = 0, removed = 0;
@@ -594,6 +676,9 @@ function renderCurrentPatch() {
 
     container.appendChild(revBar);
   }
+
+  // Commit message section — always shown, disabled when skipped/approved
+  renderCommitMessageSection(container, patch.hash, patch.message, isSkipped || isApproved);
 
   // General comment box (always shown so user can read it even when skipped/approved)
   const generalBox = document.createElement('div');

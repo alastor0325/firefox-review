@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('path');
 const { execSync } = require('child_process');
 
 /**
@@ -202,4 +203,49 @@ function getDiffPerCommit(worktreePath, mainRepoPath) {
   });
 }
 
-module.exports = { getCommits, getDiffPerCommit, getMergeBase, parseDiff };
+/**
+ * Parse the output of `git worktree list --porcelain` into an array of
+ * { path, branch } objects, excluding the main repo path.
+ *
+ * @param {string} output - stdout from `git worktree list --porcelain`
+ * @param {string} mainRepoPath - path to exclude (the main repo itself)
+ * @returns {Array<{ path: string, branch: string|null, bugId: string }>}
+ */
+function parseWorktreeList(output, mainRepoPath) {
+  const blocks = output.trim().split(/\n\n+/);
+  return blocks
+    .map((block) => {
+      const lines = block.split('\n');
+      const pathLine = lines.find((l) => l.startsWith('worktree '));
+      const branchLine = lines.find((l) => l.startsWith('branch '));
+      if (!pathLine) return null;
+      const wtPath = pathLine.slice('worktree '.length).trim();
+      const branch = branchLine
+        ? branchLine.slice('branch refs/heads/'.length).trim()
+        : null;
+      return { path: wtPath, branch };
+    })
+    .filter(Boolean)
+    .filter((wt) => wt.path !== mainRepoPath)
+    .map((wt) => {
+      const basename = path.basename(wt.path);
+      const match = basename.match(/^firefox-(.+)$/);
+      const bugId = match ? match[1] : basename;
+      return { path: wt.path, branch: wt.branch, bugId };
+    });
+}
+
+/**
+ * Discover all non-main Firefox worktrees registered with the main repo.
+ *
+ * @param {string} mainRepoPath - path to ~/firefox
+ * @returns {Array<{ path: string, branch: string|null, bugId: string }>}
+ */
+function discoverWorktrees(mainRepoPath) {
+  const output = execSync(`git -C "${mainRepoPath}" worktree list --porcelain`, {
+    encoding: 'utf8',
+  });
+  return parseWorktreeList(output, mainRepoPath);
+}
+
+module.exports = { getCommits, getDiffPerCommit, getMergeBase, parseDiff, parseWorktreeList, discoverWorktrees };

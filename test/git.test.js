@@ -1,6 +1,6 @@
 'use strict';
 
-const { parseDiff } = require('../src/git');
+const { parseDiff, parseWorktreeList } = require('../src/git');
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -188,6 +188,7 @@ diff --git a/foo.js b/foo.js
   });
 
   test('handles hunk with no count (single line, implicit ,1)', () => {
+
     const diff = `diff --git a/foo.js b/foo.js
 --- a/foo.js
 +++ b/foo.js
@@ -198,5 +199,67 @@ diff --git a/foo.js b/foo.js
     const files = parseDiff(diff);
     expect(files[0].hunks[0].oldCount).toBe(1);
     expect(files[0].hunks[0].newCount).toBe(1);
+  });
+});
+
+// ── parseWorktreeList ──────────────────────────────────────────────────────
+
+describe('parseWorktreeList', () => {
+  const MAIN = '/Users/user/firefox';
+
+  const porcelainOutput = (worktrees) => worktrees
+    .map(({ p, branch }) =>
+      `worktree ${p}\nHEAD abc123\n${branch ? `branch refs/heads/${branch}` : 'detached'}`
+    )
+    .join('\n\n');
+
+  test('returns empty array when only the main repo is listed', () => {
+    const output = porcelainOutput([{ p: MAIN, branch: 'main' }]);
+    expect(parseWorktreeList(output, MAIN)).toEqual([]);
+  });
+
+  test('returns a single worktree with extracted bugId', () => {
+    const output = porcelainOutput([
+      { p: MAIN,                        branch: 'main' },
+      { p: '/Users/user/firefox-bugABC', branch: 'bug-bugABC' },
+    ]);
+    const result = parseWorktreeList(output, MAIN);
+    expect(result).toHaveLength(1);
+    expect(result[0].bugId).toBe('bugABC');
+    expect(result[0].path).toBe('/Users/user/firefox-bugABC');
+    expect(result[0].branch).toBe('bug-bugABC');
+  });
+
+  test('returns multiple worktrees', () => {
+    const output = porcelainOutput([
+      { p: MAIN,                        branch: 'main' },
+      { p: '/Users/user/firefox-bugABC', branch: 'bug-ABC' },
+      { p: '/Users/user/firefox-bugXYZ', branch: 'bug-XYZ' },
+    ]);
+    const result = parseWorktreeList(output, MAIN);
+    expect(result).toHaveLength(2);
+    expect(result.map(w => w.bugId)).toEqual(['bugABC', 'bugXYZ']);
+  });
+
+  test('handles detached HEAD (no branch line)', () => {
+    const output = porcelainOutput([
+      { p: MAIN,                        branch: 'main' },
+      { p: '/Users/user/firefox-bugABC', branch: null },
+    ]);
+    const result = parseWorktreeList(output, MAIN);
+    expect(result[0].branch).toBeNull();
+  });
+
+  test('extracts bugId even for numeric IDs', () => {
+    const output = porcelainOutput([
+      { p: MAIN,                         branch: 'main' },
+      { p: '/Users/user/firefox-1874041', branch: 'bug-1874041' },
+    ]);
+    const result = parseWorktreeList(output, MAIN);
+    expect(result[0].bugId).toBe('1874041');
+  });
+
+  test('returns empty array for empty output', () => {
+    expect(parseWorktreeList('', MAIN)).toEqual([]);
   });
 });

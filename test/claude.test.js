@@ -75,8 +75,39 @@ describe('formatPrompt', () => {
   test('works with empty comments array', () => {
     const out = formatPrompt('bugABC', patch1, allPatches, []);
     expect(out).toContain('bugABC');
-    // Feedback section exists but has no items
     expect(out).toContain('## Reviewer feedback:');
+  });
+
+  test('marks skipped patches with [SKIPPED] in the series list', () => {
+    const out = formatPrompt('bugABC', patch1, allPatches, comments, [patch3.hash]);
+    expect(out).toContain('[SKIPPED — not reviewed]');
+    const lines = out.split('\n');
+    const skippedLine = lines.find(l => l.includes(patch3.hash));
+    expect(skippedLine).toContain('[SKIPPED');
+  });
+
+  test('does not mark the current patch as skipped even if its hash is in skippedHashes', () => {
+    const out = formatPrompt('bugABC', patch2, allPatches, comments, [patch2.hash]);
+    // Extract only the series list section to avoid matching the "Patch under review" header
+    const seriesSection = out.slice(out.indexOf('## Full patch series'));
+    const lines = seriesSection.split('\n');
+    const currentLine = lines.find(l => l.includes(patch2.hash));
+    expect(currentLine).toContain('← THIS PATCH');
+    expect(currentLine).not.toContain('SKIPPED');
+  });
+
+  test('multiple skipped patches all show the marker', () => {
+    const out = formatPrompt('bugABC', patch1, allPatches, comments, [patch2.hash, patch3.hash]);
+    const lines = out.split('\n');
+    const skipped2 = lines.find(l => l.includes(patch2.hash));
+    const skipped3 = lines.find(l => l.includes(patch3.hash));
+    expect(skipped2).toContain('[SKIPPED');
+    expect(skipped3).toContain('[SKIPPED');
+  });
+
+  test('skippedHashes defaults to empty — no markers shown when omitted', () => {
+    const out = formatPrompt('bugABC', patch1, allPatches, comments);
+    expect(out).not.toContain('SKIPPED');
   });
 });
 
@@ -120,6 +151,14 @@ describe('submitReview', () => {
     expect(typeof command).toBe('string');
     expect(command.length).toBeGreaterThan(0);
     expect(command).toContain(`REVIEW_FEEDBACK_${patch1.hash}.md`);
+  });
+
+  test('passes skippedHashes to formatPrompt — content reflects skipped patches', () => {
+    submitReview(tmpDir, 'bugABC', patch1, allPatches, comments, [patch3.hash]);
+    const content = fs.readFileSync(
+      path.join(tmpDir, `REVIEW_FEEDBACK_${patch1.hash}.md`), 'utf8'
+    );
+    expect(content).toContain('[SKIPPED');
   });
 
   test('each patch gets its own file — no clobbering', () => {

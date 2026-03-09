@@ -11,14 +11,21 @@ const path = require('path');
  * @param {{ hash: string, message: string }} patch  - the specific patch being reviewed
  * @param {Array<{ hash: string, message: string }>} allPatches - all patches in the series
  * @param {Array<{ file: string, line: number, lineContent: string, text: string }>} comments
+ * @param {string[]} skippedHashes - hashes of patches the reviewer chose to skip
  * @returns {string}
  */
-function formatPrompt(bugId, patch, allPatches, comments) {
+function formatPrompt(bugId, patch, allPatches, comments, skippedHashes = []) {
+  const skipped = new Set(skippedHashes);
   const patchNum = allPatches.findIndex((p) => p.hash === patch.hash) + 1;
   const totalPatches = allPatches.length;
 
   const seriesList = allPatches
-    .map((p, i) => `- ${p.hash} ${p.message}${p.hash === patch.hash ? '  ← THIS PATCH' : ''}`)
+    .map((p) => {
+      let suffix = '';
+      if (p.hash === patch.hash) suffix = '  ← THIS PATCH';
+      else if (skipped.has(p.hash)) suffix = '  [SKIPPED — not reviewed]';
+      return `- ${p.hash} ${p.message}${suffix}`;
+    })
     .join('\n');
 
   const feedbackItems = comments
@@ -56,10 +63,11 @@ Address each FEEDBACK item above. This feedback is for Part ${patchNum} only —
  * @param {{ hash: string, message: string }} patch
  * @param {Array} allPatches
  * @param {Array} comments
+ * @param {string[]} skippedHashes
  * @returns {{ feedbackPath: string, command: string }}
  */
-function submitReview(worktreePath, bugId, patch, allPatches, comments) {
-  const prompt = formatPrompt(bugId, patch, allPatches, comments);
+function submitReview(worktreePath, bugId, patch, allPatches, comments, skippedHashes = []) {
+  const prompt = formatPrompt(bugId, patch, allPatches, comments, skippedHashes);
   const filename = `REVIEW_FEEDBACK_${patch.hash}.md`;
   const feedbackPath = path.join(worktreePath, filename);
   fs.writeFileSync(feedbackPath, prompt, 'utf8');

@@ -98,12 +98,14 @@ function createApp({ bugId, worktreePath, mainRepoPath }) {
         return res.status(404).json({ error: `Patch ${patchHash} not found.` });
       }
 
+      const skippedHashes = Array.isArray(req.body.skippedHashes) ? req.body.skippedHashes : [];
       const { feedbackPath, command } = submitReview(
         worktreePath,
         bugId,
         patch,
         patchesCache,
-        comments
+        comments,
+        skippedHashes
       );
       res.json({ ok: true, feedbackPath, command });
     } catch (err) {

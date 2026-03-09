@@ -185,6 +185,23 @@ describe('POST /api/submit', () => {
     expect(res.body.error).toContain('zzz999');
   });
 
+  test('passes skippedHashes to submitReview when provided', async () => {
+    const app = makeApp();
+    await request(app).post('/api/submit').send({
+      ...validBody,
+      skippedHashes: ['bbb222'],
+    });
+    const skippedArg = submitReview.mock.calls[0][5];
+    expect(skippedArg).toEqual(['bbb222']);
+  });
+
+  test('passes empty skippedHashes when not provided', async () => {
+    const app = makeApp();
+    await request(app).post('/api/submit').send(validBody);
+    const skippedArg = submitReview.mock.calls[0][5];
+    expect(skippedArg).toEqual([]);
+  });
+
   test('returns 500 when submitReview throws', async () => {
     submitReview.mockImplementation(() => { throw new Error('write failed'); });
     const app = makeApp();

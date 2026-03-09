@@ -4,6 +4,7 @@
 // comments[patchHash][filePath][lineKey] = { file, line, lineContent, text, patchHash }
 const state = {
   comments: {},
+  skipped: new Set(),   // patchHashes the reviewer chose to skip
   patches: [],
   currentPatchIdx: 0,
 };
@@ -60,19 +61,38 @@ function currentPatch() {
   return state.patches[state.currentPatchIdx] || null;
 }
 
+// ── Skip management ────────────────────────────────────────────────────────
+function skipPatch(hash) {
+  state.skipped.add(hash);
+  renderTabs();
+  renderCurrentPatch();
+  updateSubmitButton();
+}
+
+function unskipPatch(hash) {
+  state.skipped.delete(hash);
+  renderTabs();
+  renderCurrentPatch();
+  updateSubmitButton();
+}
+
 // ── Submit button state ────────────────────────────────────────────────────
 function updateSubmitButton() {
   const btn = $('#btn-submit');
   const warn = $('#submit-warning');
   const patch = currentPatch();
-  const count = patch ? commentsForPatch(patch.hash).length : 0;
-  const patchLabel = state.patches.length > 1
-    ? ` for Part ${state.currentPatchIdx + 1}`
-    : '';
+  if (!patch) return;
+
+  const isSkipped = state.skipped.has(patch.hash);
+  const count = commentsForPatch(patch.hash).length;
+  const patchLabel = state.patches.length > 1 ? ` for Part ${state.currentPatchIdx + 1}` : '';
 
   btn.textContent = `Submit Review${patchLabel} to Claude`;
 
-  if (count === 0) {
+  if (isSkipped) {
+    btn.disabled = true;
+    warn.textContent = 'Patch skipped — no review to submit';
+  } else if (count === 0) {
     btn.disabled = true;
     warn.textContent = 'Add at least one comment first';
   } else {
@@ -129,7 +149,6 @@ function showCommentForm(tr, patchHash, filePath, line, key) {
 }
 
 function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
-  // Remove any existing display row for this key
   const next = trLine.nextElementSibling;
   if (next && next.classList.contains('comment-display-row') && next.dataset.lineKey === key) {
     next.remove();
@@ -273,12 +292,20 @@ function renderTabs() {
   tabsBar.style.display = '';
 
   state.patches.forEach((patch, idx) => {
-    const tab = document.createElement('button');
-    tab.className = 'patch-tab' + (idx === state.currentPatchIdx ? ' active' : '');
+    const isSkipped = state.skipped.has(patch.hash);
     const commentCount = commentsForPatch(patch.hash).length;
-    const badge = commentCount > 0 ? ` <span class="tab-badge">${commentCount}</span>` : '';
-    // Show "Part N" label + short commit message
-    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}</span>`;
+
+    const tab = document.createElement('button');
+    tab.className = 'patch-tab' +
+      (idx === state.currentPatchIdx ? ' active' : '') +
+      (isSkipped ? ' skipped' : '');
+
+    const badge = commentCount > 0 && !isSkipped
+      ? ` <span class="tab-badge">${commentCount}</span>`
+      : '';
+    const skippedIcon = isSkipped ? ' <span class="tab-skipped-icon">⊘</span>' : '';
+
+    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}</span>`;
     tab.addEventListener('click', () => switchPatch(idx));
     tabsEl.appendChild(tab);
   });
@@ -302,15 +329,42 @@ function renderCurrentPatch() {
     return;
   }
 
-  const heading = document.createElement('div');
-  heading.className = 'patch-heading';
+  const isSkipped = state.skipped.has(patch.hash);
   const patchNum = state.currentPatchIdx + 1;
   const total = state.patches.length;
+
+  // Patch heading row
+  const heading = document.createElement('div');
+  heading.className = 'patch-heading' + (isSkipped ? ' patch-heading-skipped' : '');
   heading.innerHTML = `
     <span class="patch-heading-label">Part ${patchNum}${total > 1 ? ` of ${total}` : ''}</span>
     <span class="patch-heading-msg">${escapeHtml(patch.message)}</span>
     <span class="patch-heading-hash">${escapeHtml(patch.hash)}</span>`;
+
+  // Skip / Unskip button
+  const skipBtn = document.createElement('button');
+  skipBtn.className = isSkipped ? 'btn-unskip' : 'btn-skip';
+  skipBtn.textContent = isSkipped ? 'Undo skip' : 'Skip this patch';
+  skipBtn.addEventListener('click', () => {
+    if (state.skipped.has(patch.hash)) {
+      unskipPatch(patch.hash);
+    } else {
+      skipPatch(patch.hash);
+    }
+  });
+  heading.appendChild(skipBtn);
   container.appendChild(heading);
+
+  // If skipped, show a notice instead of the diff
+  if (isSkipped) {
+    const notice = document.createElement('div');
+    notice.className = 'skip-notice';
+    notice.innerHTML = `
+      <span class="skip-notice-icon">⊘</span>
+      <span>This patch was skipped and will not be reviewed. Click <strong>Undo skip</strong> to review it.</span>`;
+    container.appendChild(notice);
+    return;
+  }
 
   if (patch.files.length === 0) {
     const msg = document.createElement('p');
@@ -339,7 +393,11 @@ async function submitReview() {
     const res = await fetch('/api/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patchHash: patch.hash, comments }),
+      body: JSON.stringify({
+        patchHash: patch.hash,
+        comments,
+        skippedHashes: [...state.skipped],
+      }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Server error');
@@ -348,7 +406,6 @@ async function submitReview() {
     $('#result-command').textContent = json.command;
     $('#result-overlay').classList.add('visible');
 
-    // Refresh tab badge
     renderTabs();
   } catch (err) {
     alert(`Error submitting review: ${err.message}`);

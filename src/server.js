@@ -119,12 +119,10 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
       return res.status(400).json({ error: 'allFeedback is required.' });
     }
 
-    const skippedHashes  = Array.isArray(req.body.skippedHashes)  ? req.body.skippedHashes  : [];
     const approvedHashes = Array.isArray(req.body.approvedHashes) ? req.body.approvedHashes : [];
     const deniedHashes   = Array.isArray(req.body.deniedHashes)   ? req.body.deniedHashes   : [];
 
     const hasActivity =
-      skippedHashes.length > 0 ||
       approvedHashes.length > 0 ||
       deniedHashes.length > 0 ||
       allFeedback.some(
@@ -143,7 +141,6 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
         worktreeName,
         patchesCache,
         allFeedback,
-        skippedHashes,
         approvedHashes,
         deniedHashes
       );

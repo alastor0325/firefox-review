@@ -73,7 +73,7 @@ When a worktree has multiple commits the UI shows **tabs** — one per patch:
 [ Part 1: Add WebIDL ]  [ Part 2: Implement logic ]  [ Part 3: Fire events ]
 ```
 
-Each tab shows a comment-count badge, a `✓` if approved, a `✗` if denied, or a `⊘` if skipped. Tabs with amended commits show a `↑` badge.
+Each tab shows a comment-count badge, a `✓` if approved, or a `✗` if denied. Tabs with amended commits show a `↑` badge.
 
 ### Per-patch actions
 
@@ -83,9 +83,8 @@ Each patch has three buttons in the heading:
 |---|---|
 | **Approve** | Patch looks good — no issues. Turns green `Approved ✓`. |
 | **Deny** | Patch requires significant changes. Diff stays visible for comments. |
-| **Skip** | Patch won't be reviewed. Turns gray with strikethrough. |
 
-All can be undone by clicking again.
+Both can be undone by clicking again. Patches with no comments and not denied are simply omitted from the generated feedback — no explicit skip needed.
 
 ### Adding comments
 
@@ -121,14 +120,13 @@ Your review state (comments, general feedback, approved/denied/skipped status) i
 | Type in the General feedback textarea | ✓ auto-saved | ✗ |
 | Click **Approve** / **Unapprove** | ✓ auto-saved | ✗ |
 | Click **Deny** / **Undeny** | ✓ auto-saved | ✗ |
-| Click **Skip** / **Unskip** | ✓ auto-saved | ✗ |
 | Click **Generate Review Prompt** | ✓ | ✓ written/overwritten |
 
 The MD is only ever written when you explicitly click the button.
 
 ### Copy current prompt bar
 
-Once all patches have been acted on (each approved, denied, or skipped), a green **Copy current prompt** bar appears below the header — this is populated the first time you click Generate Review Prompt and persists across reopens.
+Once all patches have been acted on (each approved or denied), a green **Copy current prompt** bar appears below the header — this is populated the first time you click Generate Review Prompt and persists across reopens.
 
 ## Prompt format
 
@@ -140,7 +138,7 @@ You are being asked to revise your implementation in worktree firefox-my-feature
 ## Full patch series:
 - aaa111 my-feature - Part 1: Add WebIDL  [DENIED — requires significant changes]
 - bbb222 my-feature - Part 2: Implement logic
-- ccc333 my-feature - Part 3: Fire events  [SKIPPED — not reviewed]
+- ccc333 my-feature - Part 3: Fire events  [APPROVED — no issues]
 
 ---
 
@@ -182,7 +180,6 @@ summarize what you changed for each feedback item.
 
 - Approved patches are noted `[APPROVED — no issues]` in the series list; they still get a feedback section if they have comments
 - Denied patches are noted `[DENIED — requires significant changes]` and always get a feedback section (with a denial note), even without text comments
-- Skipped patches are noted `[SKIPPED — not reviewed]` — no feedback section ever
 - Patches with no comments, no general comment, and not denied are omitted from the feedback sections entirely
 
 ## Development

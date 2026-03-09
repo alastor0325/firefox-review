@@ -6,7 +6,6 @@
 const state = {
   comments: {},
   generalComments: {},  // free-form patch-level feedback, keyed by patchHash
-  skipped: new Set(),   // patchHashes the reviewer chose to skip
   approved: new Set(),  // patchHashes the reviewer approved
   denied: new Set(),    // patchHashes the reviewer denied
   patches: [],
@@ -56,7 +55,6 @@ async function saveState() {
       body: JSON.stringify({
         comments: state.comments,
         generalComments: state.generalComments,
-        skipped: [...state.skipped],
         approved: [...state.approved],
         denied: [...state.denied],
         revisions: state.revisions,
@@ -73,7 +71,7 @@ async function saveState() {
 
 function allPatchesFinished() {
   return state.patches.length > 0 && state.patches.every(
-    (p) => state.approved.has(p.hash) || state.denied.has(p.hash) || state.skipped.has(p.hash)
+    (p) => state.approved.has(p.hash) || state.denied.has(p.hash)
   );
 }
 
@@ -145,25 +143,6 @@ function setGeneralComment(patchHash, text) {
   scheduleAutoSave();
 }
 
-// ── Skip management ────────────────────────────────────────────────────────
-function skipPatch(hash) {
-  state.skipped.add(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
-  scheduleAutoSave();
-}
-
-function unskipPatch(hash) {
-  state.skipped.delete(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
-  scheduleAutoSave();
-}
-
 // ── Deny management ────────────────────────────────────────────────────────
 function denyPatch(hash) {
   state.denied.add(hash);
@@ -208,7 +187,6 @@ function updateSubmitButton() {
   const warn = $('#submit-warning');
 
   const hasActivity =
-    state.skipped.size > 0 ||
     state.approved.size > 0 ||
     state.denied.size > 0 ||
     state.patches.some((p) =>
@@ -575,7 +553,6 @@ function renderTabs() {
   tabsBar.style.display = '';
 
   state.patches.forEach((patch, idx) => {
-    const isSkipped = state.skipped.has(patch.hash);
     const isApproved = state.approved.has(patch.hash);
     const isDenied = state.denied.has(patch.hash);
     const commentCount = commentsForPatch(patch.hash).length;
@@ -583,22 +560,20 @@ function renderTabs() {
     const tab = document.createElement('button');
     tab.className = 'patch-tab' +
       (idx === state.currentPatchIdx ? ' active' : '') +
-      (isSkipped ? ' skipped' : '') +
       (isApproved ? ' approved' : '') +
       (isDenied ? ' denied' : '') +
       (state.updatedPatches[idx] ? ' updated' : '');
 
-    const badge = commentCount > 0 && !isSkipped && !isApproved
+    const badge = commentCount > 0 && !isApproved
       ? ` <span class="tab-badge">${commentCount}</span>`
       : '';
-    const skippedIcon = isSkipped ? ' <span class="tab-skipped-icon">⊘</span>' : '';
     const approvedIcon = isApproved ? ' <span class="tab-approved-icon">✓</span>' : '';
     const deniedIcon = isDenied ? ' <span class="tab-denied-icon">✗</span>' : '';
     const updatedIcon = state.updatedPatches[idx]
       ? ' <span class="tab-updated-icon">↑</span>'
       : '';
 
-    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}${approvedIcon}${deniedIcon}${updatedIcon}</span>`;
+    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${approvedIcon}${deniedIcon}${updatedIcon}</span>`;
     tab.addEventListener('click', () => switchPatch(idx));
     tabsEl.appendChild(tab);
   });
@@ -622,7 +597,6 @@ function renderCurrentPatch() {
     return;
   }
 
-  const isSkipped = state.skipped.has(patch.hash);
   const isApproved = state.approved.has(patch.hash);
   const isDenied = state.denied.has(patch.hash);
   const patchNum = state.currentPatchIdx + 1;
@@ -631,7 +605,6 @@ function renderCurrentPatch() {
   // Patch heading row
   const heading = document.createElement('div');
   heading.className = 'patch-heading' +
-    (isSkipped ? ' patch-heading-skipped' : '') +
     (isApproved ? ' patch-heading-approved' : '') +
     (isDenied ? ' patch-heading-denied' : '');
   heading.innerHTML = `
@@ -665,20 +638,8 @@ function renderCurrentPatch() {
     }
   });
 
-  const skipBtn = document.createElement('button');
-  skipBtn.className = isSkipped ? 'btn-unskip' : 'btn-skip';
-  skipBtn.textContent = isSkipped ? 'Undo skip' : 'Skip';
-  skipBtn.addEventListener('click', () => {
-    if (state.skipped.has(patch.hash)) {
-      unskipPatch(patch.hash);
-    } else {
-      skipPatch(patch.hash);
-    }
-  });
-
   btnGroup.appendChild(approveBtn);
   btnGroup.appendChild(denyBtn);
-  btnGroup.appendChild(skipBtn);
   heading.appendChild(btnGroup);
   container.appendChild(heading);
 
@@ -714,8 +675,8 @@ function renderCurrentPatch() {
     container.appendChild(revBar);
   }
 
-  // Commit message section — always shown, disabled when skipped/approved
-  renderCommitMessageSection(container, patch.hash, patch.body || patch.message, isSkipped || isApproved);
+  // Commit message section — always shown, disabled when approved
+  renderCommitMessageSection(container, patch.hash, patch.body || patch.message, isApproved);
 
   // General comment box (always shown so user can read it even when skipped/approved)
   const generalBox = document.createElement('div');
@@ -729,7 +690,7 @@ function renderCurrentPatch() {
   container.appendChild(generalBox);
 
   const textarea = generalBox.querySelector('textarea');
-  if (isSkipped || isApproved) textarea.disabled = true;
+  if (isApproved) textarea.disabled = true;
   textarea.addEventListener('input', () => setGeneralComment(patch.hash, textarea.value));
 
   // Deny notice — show below general comment box but before diff
@@ -749,17 +710,6 @@ function renderCurrentPatch() {
     notice.innerHTML = `
       <span class="approve-notice-icon">✓</span>
       <span>This patch was approved — no issues found. Click <strong>Approved ✓</strong> to undo.</span>`;
-    container.appendChild(notice);
-    return;
-  }
-
-  // Skip notice — show instead of diff
-  if (isSkipped) {
-    const notice = document.createElement('div');
-    notice.className = 'skip-notice';
-    notice.innerHTML = `
-      <span class="skip-notice-icon">⊘</span>
-      <span>This patch was skipped and will not be reviewed. Click <strong>Undo skip</strong> to review it.</span>`;
     container.appendChild(notice);
     return;
   }
@@ -829,7 +779,6 @@ async function submitReview() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         allFeedback,
-        skippedHashes:  [...state.skipped],
         approvedHashes: [...state.approved],
         deniedHashes:   [...state.denied],
       }),
@@ -898,7 +847,6 @@ async function init() {
       const saved = await stateRes.json();
       if (saved.comments) state.comments = saved.comments;
       if (saved.generalComments) state.generalComments = saved.generalComments;
-      if (saved.skipped) state.skipped = new Set(saved.skipped);
       if (saved.approved) state.approved = new Set(saved.approved);
       if (saved.denied) state.denied = new Set(saved.denied);
       if (saved.prompt) savedPromptText = saved.prompt;

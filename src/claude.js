@@ -10,13 +10,11 @@ const path = require('path');
  * @param {string} worktreeName
  * @param {Array<{ hash: string, message: string }>} allPatches
  * @param {Array<{ hash: string, comments: Array, generalComment: string }>} allFeedback
- * @param {string[]} skippedHashes
  * @param {string[]} approvedHashes
  * @param {string[]} deniedHashes
  * @returns {string}
  */
-function formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHashes = [], approvedHashes = [], deniedHashes = []) {
-  const skipped = new Set(skippedHashes);
+function formatCombinedPrompt(worktreeName, allPatches, allFeedback, approvedHashes = [], deniedHashes = []) {
   const approved = new Set(approvedHashes);
   const denied = new Set(deniedHashes);
   const feedbackMap = Object.fromEntries(allFeedback.map((f) => [f.hash, f]));
@@ -24,8 +22,7 @@ function formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHash
   const seriesList = allPatches
     .map((p) => {
       let suffix = '';
-      if (skipped.has(p.hash)) suffix = '  [SKIPPED — not reviewed]';
-      else if (approved.has(p.hash)) suffix = '  [APPROVED — no issues]';
+      if (approved.has(p.hash)) suffix = '  [APPROVED — no issues]';
       else if (denied.has(p.hash)) suffix = '  [DENIED — requires significant changes]';
       return `- ${p.hash} ${p.message}${suffix}`;
     })
@@ -33,7 +30,6 @@ function formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHash
 
   const feedbackSections = allPatches
     .filter((p) => {
-      if (skipped.has(p.hash)) return false;
       const fb = feedbackMap[p.hash];
       if (!fb) return false;
       const hasFeedback = fb.comments.length > 0 || (fb.generalComment || '').trim().length > 0;
@@ -94,13 +90,12 @@ For each part with feedback above, apply changes only to files modified in that 
  * @param {string} worktreeName
  * @param {Array<{ hash: string, message: string }>} allPatches
  * @param {Array<{ hash: string, comments: Array, generalComment: string }>} allFeedback
- * @param {string[]} skippedHashes
  * @param {string[]} approvedHashes
  * @param {string[]} deniedHashes
  * @returns {{ feedbackPath: string, prompt: string }}
  */
-function submitReview(worktreePath, worktreeName, allPatches, allFeedback, skippedHashes = [], approvedHashes = [], deniedHashes = []) {
-  const fileContent = formatCombinedPrompt(worktreeName, allPatches, allFeedback, skippedHashes, approvedHashes, deniedHashes);
+function submitReview(worktreePath, worktreeName, allPatches, allFeedback, approvedHashes = [], deniedHashes = []) {
+  const fileContent = formatCombinedPrompt(worktreeName, allPatches, allFeedback, approvedHashes, deniedHashes);
   const filename = `REVIEW_FEEDBACK_${worktreeName}.md`;
   const feedbackPath = path.join(worktreePath, filename);
   fs.writeFileSync(feedbackPath, fileContent, 'utf8');

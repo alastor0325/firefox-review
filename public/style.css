@@ -150,10 +150,6 @@ body {
   max-width: 240px;
 }
 
-.patch-tab.skipped { opacity: 0.5; }
-.patch-tab.skipped .tab-part { color: #6e7681; }
-.patch-tab.skipped .tab-msg { text-decoration: line-through; }
-.tab-skipped-icon { color: #6e7681; margin-left: 4px; }
 
 .patch-tab.approved .tab-part { color: #3fb950; }
 .tab-approved-icon { color: #3fb950; margin-left: 4px; }
@@ -337,49 +333,6 @@ body {
 }
 .deny-notice-icon { font-size: 18px; }
 
-/* ── Skip / Unskip buttons ── */
-.btn-skip {
-  background: transparent;
-  color: #6e7681;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 3px 12px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.btn-skip:hover { background: #21262d; color: #c9d1d9; }
-
-.btn-unskip {
-  background: #f0883e22;
-  color: #f0883e;
-  border: 1px solid #f0883e55;
-  border-radius: 6px;
-  padding: 3px 12px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.btn-unskip:hover { background: #f0883e33; }
-
-/* ── Skip notice ── */
-.skip-notice {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #1c2128;
-  border: 1px dashed #30363d;
-  border-radius: 6px;
-  padding: 20px 24px;
-  color: #6e7681;
-  font-size: 14px;
-  margin-top: 8px;
-}
-
-.skip-notice-icon { font-size: 20px; color: #484f58; }
-
-.patch-heading-skipped .patch-heading-msg { text-decoration: line-through; opacity: 0.5; }
-.patch-heading-skipped .patch-heading-label { background: #484f58; }
 
 .patch-heading-approved .patch-heading-label { background: #3fb950; color: #0d1117; }
 

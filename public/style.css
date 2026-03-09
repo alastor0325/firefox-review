@@ -23,39 +23,18 @@ body {
   flex-wrap: wrap;
 }
 
-#header-left {
-  flex: 1 1 auto;
-  min-width: 0;
-}
+#header-left { flex: 1 1 auto; min-width: 0; }
 
 #header h1 {
   font-size: 18px;
   font-weight: 600;
   color: #e6edf3;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
-#header h1 a {
-  color: #58a6ff;
-  text-decoration: none;
-}
-
-#header h1 a:hover { text-decoration: underline; }
-
-#commit-list {
-  list-style: none;
+#worktree-path {
   font-size: 12px;
-  color: #8b949e;
-}
-
-#commit-list li {
-  margin-bottom: 2px;
-}
-
-#commit-list .hash {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  color: #58a6ff;
-  margin-right: 6px;
+  color: #6e7681;
 }
 
 /* ── Submit button area ── */
@@ -76,15 +55,84 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s, border-color 0.15s;
 }
 
 #btn-submit:hover { background: #2ea043; }
 #btn-submit:disabled { background: #21262d; color: #6e7681; border-color: #30363d; cursor: not-allowed; }
 
-#submit-warning {
+#submit-warning { font-size: 12px; color: #f0883e; }
+
+/* ── Patch tab bar ── */
+#patch-tabs-bar {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 0 24px;
+  position: sticky;
+  top: 65px;   /* below header */
+  z-index: 99;
+  overflow-x: auto;
+}
+
+#patch-tabs {
+  display: flex;
+  gap: 0;
+  min-width: max-content;
+}
+
+.patch-tab {
+  background: transparent;
+  color: #8b949e;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 20px;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 280px;
+  text-align: left;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.patch-tab:hover { color: #c9d1d9; background: rgba(255,255,255,0.03); }
+
+.patch-tab.active {
+  color: #e6edf3;
+  border-bottom-color: #f78166;
+}
+
+.tab-part {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f78166;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.patch-tab.active .tab-part { color: #f78166; }
+
+.tab-msg {
   font-size: 12px;
-  color: #f0883e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.tab-badge {
+  display: inline-block;
+  background: #f0883e;
+  color: #0d1117;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 0 5px;
+  margin-left: 4px;
+  vertical-align: middle;
 }
 
 /* ── Files changed section ── */
@@ -92,13 +140,38 @@ body {
   padding: 16px 24px;
 }
 
-#files-changed h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: #8b949e;
-  margin-bottom: 12px;
+/* ── Patch heading ── */
+.patch-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.patch-heading-label {
+  background: #f78166;
+  color: #0d1117;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 8px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  flex: 0 0 auto;
+}
+
+.patch-heading-msg {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+.patch-heading-hash {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  color: #58a6ff;
+  flex: 0 0 auto;
 }
 
 /* ── File block ── */
@@ -160,7 +233,6 @@ body {
   tab-size: 4;
 }
 
-/* Hunk header row */
 .hunk-header td {
   background: #1c2533;
   color: #8b949e;
@@ -168,7 +240,6 @@ body {
   font-style: italic;
 }
 
-/* Line number cells */
 .ln-old, .ln-new {
   width: 44px;
   min-width: 44px;
@@ -180,7 +251,6 @@ body {
   border-right: 1px solid #21262d;
 }
 
-/* Content cell */
 .ln-content {
   padding: 1px 8px 1px 12px;
   white-space: pre;
@@ -192,7 +262,6 @@ body {
 
 .ln-content:hover { background: rgba(255,255,255,0.03); }
 
-/* Line type coloring */
 tr.line-added .ln-old,
 tr.line-added .ln-new { background: #0d4a23; }
 tr.line-added .ln-content { background: #0d4a23; color: #aff5b4; }
@@ -205,7 +274,6 @@ tr.line-removed .ln-content:hover { background: #5a1010; }
 
 tr.line-context .ln-content { color: #8b949e; }
 
-/* Expand icon shown on content hover */
 .line-icon {
   display: none;
   color: #58a6ff;
@@ -277,7 +345,6 @@ tr.comment-display-row td {
 
 .btn-cancel:hover { background: #21262d; color: #c9d1d9; }
 
-/* Comment sticky-note display */
 .comment-display-inner {
   background: #2d2a1e;
   border-left: 3px solid #f0883e;
@@ -334,16 +401,12 @@ tr.comment-display-row td {
   padding: 24px;
   max-width: 680px;
   width: 90%;
-  position: relative;
 }
 
-#result-modal h3 {
-  font-size: 16px;
-  color: #3fb950;
-  margin-bottom: 12px;
-}
-
+#result-modal h3 { font-size: 16px; color: #3fb950; margin-bottom: 12px; }
 #result-modal p { color: #8b949e; margin-bottom: 8px; font-size: 13px; }
+
+#result-feedback-path { color: #e6edf3; font-size: 12px; }
 
 #result-command {
   background: #0d1117;
@@ -366,7 +429,6 @@ tr.comment-display-row td {
   padding: 6px 14px;
   font-size: 12px;
   cursor: pointer;
-  margin-right: 8px;
 }
 
 #btn-copy-command:hover { background: #30363d; }

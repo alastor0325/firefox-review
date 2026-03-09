@@ -3,9 +3,27 @@
 const express = require('express');
 const path = require('path');
 const net = require('net');
+const os = require('os');
 const { execSync } = require('child_process');
-const { getCommits, getDiff } = require('./git');
+const { getDiffPerCommit } = require('./git');
 const { submitReview } = require('./claude');
+
+/**
+ * Open the browser in a cross-platform way.
+ */
+function openBrowser(url) {
+  const cmds = {
+    win32:  `start "" "${url}"`,
+    darwin: `open "${url}"`,
+    linux:  `xdg-open "${url}"`,
+  };
+  const cmd = cmds[os.platform()] || cmds.linux;
+  try {
+    execSync(cmd);
+  } catch {
+    console.log(`Open your browser at: ${url}`);
+  }
+}
 
 /**
  * Find an available port starting from the preferred port.
@@ -17,10 +35,7 @@ function findAvailablePort(preferred) {
       const port = server.address().port;
       server.close(() => resolve(port));
     });
-    server.on('error', () => {
-      // Port in use, try next
-      resolve(findAvailablePort(preferred + 1));
-    });
+    server.on('error', () => resolve(findAvailablePort(preferred + 1)));
   });
 }
 
@@ -32,18 +47,17 @@ async function startServer({ bugId, worktreePath, mainRepoPath }) {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  // Cache diff and commits so we only compute once
-  let diffCache = null;
-  let commitsCache = null;
+  // Cache patches so we only compute once
+  let patchesCache = null;
 
   function loadData() {
-    if (diffCache && commitsCache) return;
+    if (patchesCache) return;
     console.log('Computing git diff...');
     try {
-      commitsCache = getCommits(worktreePath, mainRepoPath);
-      diffCache = getDiff(worktreePath, mainRepoPath);
+      patchesCache = getDiffPerCommit(worktreePath, mainRepoPath);
+      const totalFiles = patchesCache.reduce((n, p) => n + p.files.length, 0);
       console.log(
-        `Found ${commitsCache.length} commit(s), ${diffCache.length} changed file(s).`
+        `Found ${patchesCache.length} patch(es), ${totalFiles} changed file(s) total.`
       );
     } catch (err) {
       console.error('Error computing diff:', err.message);
@@ -51,35 +65,43 @@ async function startServer({ bugId, worktreePath, mainRepoPath }) {
     }
   }
 
-  // GET /api/diff — return parsed diff and commits
+  // GET /api/diff — return patches (one per commit) and metadata
   app.get('/api/diff', (req, res) => {
     try {
       loadData();
       res.json({
         bugId,
         worktreePath,
-        commits: commitsCache,
-        files: diffCache,
+        patches: patchesCache,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // POST /api/submit — write REVIEW_FEEDBACK.md and return the claude command
+  // POST /api/submit — write REVIEW_FEEDBACK_<hash>.md and return the claude command
   app.post('/api/submit', (req, res) => {
-    const { comments } = req.body;
+    const { patchHash, comments } = req.body;
 
+    if (!patchHash) {
+      return res.status(400).json({ error: 'patchHash is required.' });
+    }
     if (!comments || !Array.isArray(comments) || comments.length === 0) {
       return res.status(400).json({ error: 'No comments provided.' });
     }
 
     try {
       loadData();
+      const patch = patchesCache.find((p) => p.hash === patchHash);
+      if (!patch) {
+        return res.status(404).json({ error: `Patch ${patchHash} not found.` });
+      }
+
       const { feedbackPath, command } = submitReview(
         worktreePath,
         bugId,
-        commitsCache,
+        patch,
+        patchesCache,
         comments
       );
       res.json({ ok: true, feedbackPath, command });
@@ -88,20 +110,13 @@ async function startServer({ bugId, worktreePath, mainRepoPath }) {
     }
   });
 
-  const preferredPort = 7777;
-  const port = await findAvailablePort(preferredPort);
+  const port = await findAvailablePort(7777);
 
   app.listen(port, '127.0.0.1', () => {
     const url = `http://localhost:${port}`;
     console.log(`\nfirefox-review server running at ${url}`);
-    console.log(`Reviewing bug ${bugId} — worktree: ${worktreePath}\n`);
-
-    // Open browser on macOS
-    try {
-      execSync(`open "${url}"`);
-    } catch {
-      console.log(`Open your browser at: ${url}`);
-    }
+    console.log(`Reviewing ${bugId} — worktree: ${worktreePath}\n`);
+    openBrowser(url);
   });
 }
 

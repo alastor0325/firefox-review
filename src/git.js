@@ -20,12 +20,12 @@ function getMergeBase(worktreePath, mainRepoPath) {
 
 /**
  * Get list of commits ahead of the merge-base.
- * Returns array of { hash, message } objects.
+ * Returns array of { hash, message } objects, oldest first.
  */
 function getCommits(worktreePath, mainRepoPath) {
   const base = getMergeBase(worktreePath, mainRepoPath);
   const output = execSync(
-    `git -C "${worktreePath}" log --oneline ${base}..HEAD`,
+    `git -C "${worktreePath}" log --oneline --reverse ${base}..HEAD`,
     { encoding: 'utf8' }
   ).trim();
 
@@ -154,7 +154,6 @@ function parseDiff(diffText) {
         });
         oldLineNum++;
       } else if (line.startsWith(' ') || line === '') {
-        // Context line (space prefix or empty — empty can appear at end of hunk)
         currentHunk.lines.push({
           type: 'context',
           content: line.length > 0 ? line.slice(1) : '',
@@ -183,15 +182,24 @@ function parseDiff(diffText) {
 }
 
 /**
- * Get the full diff between base and HEAD, parsed into structured format.
+ * Get per-commit diffs. Returns an array of patch objects (oldest first):
+ * { hash, message, files }
  */
-function getDiff(worktreePath, mainRepoPath) {
-  const base = getMergeBase(worktreePath, mainRepoPath);
-  const rawDiff = execSync(
-    `git -C "${worktreePath}" diff ${base}..HEAD`,
-    { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
-  );
-  return parseDiff(rawDiff);
+function getDiffPerCommit(worktreePath, mainRepoPath) {
+  const commits = getCommits(worktreePath, mainRepoPath);
+  return commits.map((commit) => {
+    // git show outputs commit metadata then the diff; parseDiff ignores everything
+    // before the first "diff --git" line so this works without extra flags.
+    const raw = execSync(
+      `git -C "${worktreePath}" show ${commit.hash}`,
+      { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
+    );
+    return {
+      hash: commit.hash,
+      message: commit.message,
+      files: parseDiff(raw),
+    };
+  });
 }
 
-module.exports = { getCommits, getDiff, getMergeBase };
+module.exports = { getCommits, getDiffPerCommit, getMergeBase };

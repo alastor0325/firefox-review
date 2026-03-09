@@ -11,17 +11,18 @@
   <!-- ── Header ── -->
   <div id="header">
     <div id="header-left">
-      <h1>
-        firefox-review ·
-        <span id="bug-id-display"></span>
-      </h1>
-      <div style="font-size:12px; color:#6e7681; margin-bottom:6px;" id="worktree-path"></div>
-      <ul id="commit-list"></ul>
+      <h1>firefox-review · <span id="bug-id-display"></span></h1>
+      <div id="worktree-path"></div>
     </div>
     <div id="submit-area">
       <button id="btn-submit" disabled>Submit Review to Claude</button>
       <span id="submit-warning">Add at least one comment first</span>
     </div>
+  </div>
+
+  <!-- ── Patch tabs (shown only when there are multiple patches) ── -->
+  <div id="patch-tabs-bar" style="display:none;">
+    <div id="patch-tabs"></div>
   </div>
 
   <!-- ── Loading / error ── -->
@@ -35,10 +36,10 @@
   <div id="result-overlay">
     <div id="result-modal">
       <h3>Review submitted!</h3>
-      <p>Feedback saved to: <code id="result-feedback-path" style="color:#e6edf3;font-size:12px;"></code></p>
+      <p>Feedback saved to: <code id="result-feedback-path"></code></p>
       <p style="margin-top:12px;">Run the following command in your terminal to send it to Claude:</p>
       <div id="result-command"></div>
-      <div style="display:flex;gap:8px;margin-top:4px;">
+      <div style="display:flex;gap:8px;margin-top:12px;">
         <button id="btn-copy-command">Copy command</button>
         <button id="btn-close-modal">Close</button>
       </div>

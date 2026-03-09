@@ -3,22 +3,18 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { startServer } = require('../src/server');
 
 const bugId = process.argv[2];
 
 if (!bugId) {
   console.error('Usage: firefox-review <bug-id>');
-  console.error('Example: firefox-review 1874041');
+  console.error('Example: firefox-review bugABC');
   process.exit(1);
 }
 
-if (!/^\d+$/.test(bugId)) {
-  console.error(`Error: bug-id must be a number, got: ${bugId}`);
-  process.exit(1);
-}
-
-const worktreePath = path.join(process.env.HOME, `firefox-${bugId}`);
+const worktreePath = path.join(os.homedir(), `firefox-${bugId}`);
 
 if (!fs.existsSync(worktreePath)) {
   console.error(`Error: Worktree not found at ${worktreePath}`);
@@ -26,7 +22,7 @@ if (!fs.existsSync(worktreePath)) {
   process.exit(1);
 }
 
-const mainRepoPath = path.join(process.env.HOME, 'firefox');
+const mainRepoPath = path.join(os.homedir(), 'firefox');
 
 if (!fs.existsSync(mainRepoPath)) {
   console.error(`Warning: Main Firefox repo not found at ${mainRepoPath}`);

@@ -1,11 +1,11 @@
 'use strict';
 
 // ── State ──────────────────────────────────────────────────────────────────
-// comments[file][lineKey] = { file, line, lineContent, text }
-// lineKey = `${newLineNum ?? 'r'+oldLineNum}`
+// comments[patchHash][filePath][lineKey] = { file, line, lineContent, text, patchHash }
 const state = {
-  comments: {},   // keyed by file path, then by lineKey
-  diffData: null, // full API response
+  comments: {},
+  patches: [],
+  currentPatchIdx: 0,
 };
 
 // ── DOM helpers ────────────────────────────────────────────────────────────
@@ -25,41 +25,53 @@ function lineKey(line) {
   return line.newLineNum != null ? `n${line.newLineNum}` : `r${line.oldLineNum}`;
 }
 
-function getComment(filePath, key) {
-  return (state.comments[filePath] || {})[key] || null;
+function getComment(patchHash, filePath, key) {
+  return ((state.comments[patchHash] || {})[filePath] || {})[key] || null;
 }
 
-function setComment(filePath, key, commentObj) {
-  if (!state.comments[filePath]) state.comments[filePath] = {};
-  state.comments[filePath][key] = commentObj;
+function setComment(patchHash, filePath, key, commentObj) {
+  if (!state.comments[patchHash]) state.comments[patchHash] = {};
+  if (!state.comments[patchHash][filePath]) state.comments[patchHash][filePath] = {};
+  state.comments[patchHash][filePath][key] = commentObj;
   updateSubmitButton();
 }
 
-function deleteComment(filePath, key) {
-  if (state.comments[filePath]) {
-    delete state.comments[filePath][key];
-    if (Object.keys(state.comments[filePath]).length === 0) {
-      delete state.comments[filePath];
-    }
+function deleteComment(patchHash, filePath, key) {
+  const byFile = (state.comments[patchHash] || {});
+  if (byFile[filePath]) {
+    delete byFile[filePath][key];
+    if (Object.keys(byFile[filePath]).length === 0) delete byFile[filePath];
   }
   updateSubmitButton();
 }
 
-function allComments() {
+function commentsForPatch(patchHash) {
   const list = [];
-  for (const filePath of Object.keys(state.comments)) {
-    for (const key of Object.keys(state.comments[filePath])) {
-      list.push(state.comments[filePath][key]);
+  const byFile = state.comments[patchHash] || {};
+  for (const filePath of Object.keys(byFile)) {
+    for (const key of Object.keys(byFile[filePath])) {
+      list.push(byFile[filePath][key]);
     }
   }
   return list;
+}
+
+function currentPatch() {
+  return state.patches[state.currentPatchIdx] || null;
 }
 
 // ── Submit button state ────────────────────────────────────────────────────
 function updateSubmitButton() {
   const btn = $('#btn-submit');
   const warn = $('#submit-warning');
-  const count = allComments().length;
+  const patch = currentPatch();
+  const count = patch ? commentsForPatch(patch.hash).length : 0;
+  const patchLabel = state.patches.length > 1
+    ? ` for Part ${state.currentPatchIdx + 1}`
+    : '';
+
+  btn.textContent = `Submit Review${patchLabel} to Claude`;
+
   if (count === 0) {
     btn.disabled = true;
     warn.textContent = 'Add at least one comment first';
@@ -75,7 +87,7 @@ function removeExistingForm() {
   if (existing) existing.remove();
 }
 
-function showCommentForm(tr, filePath, line, key) {
+function showCommentForm(tr, patchHash, filePath, line, key) {
   removeExistingForm();
 
   const formRow = document.createElement('tr');
@@ -94,40 +106,36 @@ function showCommentForm(tr, filePath, line, key) {
   tr.after(formRow);
 
   const textarea = formRow.querySelector('textarea');
-  // Pre-fill if editing
-  const existing = getComment(filePath, key);
+  const existing = getComment(patchHash, filePath, key);
   if (existing) textarea.value = existing.text;
   textarea.focus();
 
-  formRow.querySelector('.btn-cancel').addEventListener('click', () => {
-    formRow.remove();
-  });
+  formRow.querySelector('.btn-cancel').addEventListener('click', () => formRow.remove());
 
   formRow.querySelector('.btn-save').addEventListener('click', () => {
     const text = textarea.value.trim();
     if (!text) return;
-
     const commentObj = {
+      patchHash,
       file: filePath,
       line: line.newLineNum != null ? line.newLineNum : line.oldLineNum,
       lineContent: line.content,
       text,
     };
-    setComment(filePath, key, commentObj);
+    setComment(patchHash, filePath, key, commentObj);
     formRow.remove();
-    renderCommentDisplay(tr, filePath, line, key);
+    renderCommentDisplay(tr, patchHash, filePath, line, key);
   });
 }
 
-function renderCommentDisplay(trLine, filePath, line, key) {
+function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
   // Remove any existing display row for this key
-  const existingDisplay = trLine.nextElementSibling;
-  if (existingDisplay && existingDisplay.classList.contains('comment-display-row') &&
-      existingDisplay.dataset.lineKey === key) {
-    existingDisplay.remove();
+  const next = trLine.nextElementSibling;
+  if (next && next.classList.contains('comment-display-row') && next.dataset.lineKey === key) {
+    next.remove();
   }
 
-  const comment = getComment(filePath, key);
+  const comment = getComment(patchHash, filePath, key);
   if (!comment) return;
 
   const lineNum = line.newLineNum != null ? line.newLineNum : line.oldLineNum;
@@ -148,15 +156,14 @@ function renderCommentDisplay(trLine, filePath, line, key) {
   trLine.after(displayRow);
 
   displayRow.querySelector('.btn-delete-comment').addEventListener('click', () => {
-    deleteComment(filePath, key);
+    deleteComment(patchHash, filePath, key);
     displayRow.remove();
   });
 
-  // Click on comment body to re-edit
   displayRow.querySelector('.comment-body').style.cursor = 'pointer';
   displayRow.querySelector('.comment-body').addEventListener('click', () => {
     displayRow.remove();
-    showCommentForm(trLine, filePath, line, key);
+    showCommentForm(trLine, patchHash, filePath, line, key);
   });
 }
 
@@ -172,14 +179,13 @@ function countStats(hunks) {
   return { added, removed };
 }
 
-function renderFile(fileData) {
+function renderFile(fileData, patchHash) {
   const filePath = fileData.newPath || fileData.oldPath || '(unknown)';
   const { added, removed } = countStats(fileData.hunks);
 
   const block = document.createElement('div');
   block.className = 'file-block';
 
-  // Header
   const header = document.createElement('div');
   header.className = 'file-header';
   header.innerHTML = `
@@ -191,15 +197,12 @@ function renderFile(fileData) {
     </span>`;
   block.appendChild(header);
 
-  // Diff body
   const body = document.createElement('div');
   body.className = 'diff-body';
-
   const table = document.createElement('table');
   table.className = 'diff-table';
 
   for (const hunk of fileData.hunks) {
-    // Hunk header row
     const hunkTr = document.createElement('tr');
     hunkTr.className = 'hunk-header';
     hunkTr.innerHTML = `<td colspan="3">${escapeHtml(hunk.header)}</td>`;
@@ -224,25 +227,21 @@ function renderFile(fileData) {
         <td class="ln-new">${escapeHtml(String(newNum))}</td>
         <td class="ln-content"><span class="line-icon">＋</span>${escapeHtml(prefix + line.content)}</td>`;
 
-      // Click to add comment
       const key = lineKey(line);
       tr.querySelector('.ln-content').addEventListener('click', () => {
-        // If form already open on this row, close it
         const next = tr.nextElementSibling;
         if (next && next.classList.contains('comment-form-row')) {
           next.remove();
           return;
         }
         removeExistingForm();
-        showCommentForm(tr, filePath, line, key);
+        showCommentForm(tr, patchHash, filePath, line, key);
       });
 
       table.appendChild(tr);
 
-      // Render any existing comment for this line (e.g. after page refresh — won't happen
-      // in SPA but kept for completeness when re-rendering)
-      if (getComment(filePath, key)) {
-        renderCommentDisplay(tr, filePath, line, key);
+      if (getComment(patchHash, filePath, key)) {
+        renderCommentDisplay(tr, patchHash, filePath, line, key);
       }
     }
   }
@@ -250,7 +249,6 @@ function renderFile(fileData) {
   body.appendChild(table);
   block.appendChild(body);
 
-  // Toggle collapse
   let collapsed = false;
   header.addEventListener('click', () => {
     collapsed = !collapsed;
@@ -261,48 +259,76 @@ function renderFile(fileData) {
   return block;
 }
 
-// ── Main render ────────────────────────────────────────────────────────────
-function renderDiff(data) {
-  state.diffData = data;
+// ── Patch tab rendering ─────────────────────────────────────────────────────
+function renderTabs() {
+  const tabsBar = $('#patch-tabs-bar');
+  const tabsEl = $('#patch-tabs');
+  tabsEl.innerHTML = '';
 
-  // Header
-  $('#bug-id-display').textContent = `Bug ${data.bugId}`;
-  $('#worktree-path').textContent = data.worktreePath;
-
-  const commitList = $('#commit-list');
-  commitList.innerHTML = '';
-  if (data.commits.length === 0) {
-    const li = document.createElement('li');
-    li.textContent = '(no commits ahead of base)';
-    commitList.appendChild(li);
-  } else {
-    for (const c of data.commits) {
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="hash">${escapeHtml(c.hash)}</span>${escapeHtml(c.message)}`;
-      commitList.appendChild(li);
-    }
+  if (state.patches.length <= 1) {
+    tabsBar.style.display = 'none';
+    return;
   }
 
-  // Files
-  const container = $('#files-changed');
-  container.innerHTML = '<h2>Files changed</h2>';
+  tabsBar.style.display = '';
 
-  if (data.files.length === 0) {
+  state.patches.forEach((patch, idx) => {
+    const tab = document.createElement('button');
+    tab.className = 'patch-tab' + (idx === state.currentPatchIdx ? ' active' : '');
+    const commentCount = commentsForPatch(patch.hash).length;
+    const badge = commentCount > 0 ? ` <span class="tab-badge">${commentCount}</span>` : '';
+    // Show "Part N" label + short commit message
+    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}</span>`;
+    tab.addEventListener('click', () => switchPatch(idx));
+    tabsEl.appendChild(tab);
+  });
+}
+
+function switchPatch(idx) {
+  removeExistingForm();
+  state.currentPatchIdx = idx;
+  renderCurrentPatch();
+  renderTabs();
+  updateSubmitButton();
+}
+
+function renderCurrentPatch() {
+  const patch = currentPatch();
+  const container = $('#files-changed');
+  container.innerHTML = '';
+
+  if (!patch) {
+    container.innerHTML = '<p style="color:#8b949e;padding:16px 24px;">No patches found.</p>';
+    return;
+  }
+
+  const heading = document.createElement('div');
+  heading.className = 'patch-heading';
+  const patchNum = state.currentPatchIdx + 1;
+  const total = state.patches.length;
+  heading.innerHTML = `
+    <span class="patch-heading-label">Part ${patchNum}${total > 1 ? ` of ${total}` : ''}</span>
+    <span class="patch-heading-msg">${escapeHtml(patch.message)}</span>
+    <span class="patch-heading-hash">${escapeHtml(patch.hash)}</span>`;
+  container.appendChild(heading);
+
+  if (patch.files.length === 0) {
     const msg = document.createElement('p');
-    msg.style.color = '#8b949e';
-    msg.textContent = 'No changed files found.';
+    msg.style.cssText = 'color:#8b949e;padding:8px 0;';
+    msg.textContent = 'No changed files in this patch.';
     container.appendChild(msg);
     return;
   }
 
-  for (const fileData of data.files) {
-    container.appendChild(renderFile(fileData));
+  for (const fileData of patch.files) {
+    container.appendChild(renderFile(fileData, patch.hash));
   }
 }
 
 // ── Submit review ──────────────────────────────────────────────────────────
 async function submitReview() {
-  const comments = allComments();
+  const patch = currentPatch();
+  const comments = patch ? commentsForPatch(patch.hash) : [];
   if (comments.length === 0) return;
 
   const btn = $('#btn-submit');
@@ -313,22 +339,20 @@ async function submitReview() {
     const res = await fetch('/api/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comments }),
+      body: JSON.stringify({ patchHash: patch.hash, comments }),
     });
     const json = await res.json();
-
     if (!res.ok) throw new Error(json.error || 'Server error');
 
-    // Show result overlay
     $('#result-feedback-path').textContent = json.feedbackPath;
     $('#result-command').textContent = json.command;
-    const overlay = $('#result-overlay');
-    overlay.classList.add('visible');
+    $('#result-overlay').classList.add('visible');
+
+    // Refresh tab badge
+    renderTabs();
   } catch (err) {
     alert(`Error submitting review: ${err.message}`);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Submit Review to Claude';
     updateSubmitButton();
   }
 }
@@ -351,14 +375,12 @@ async function init() {
     $('#result-overlay').classList.remove('visible');
   });
 
-  // Close modal on backdrop click
   $('#result-overlay').addEventListener('click', (e) => {
     if (e.target === $('#result-overlay')) {
       $('#result-overlay').classList.remove('visible');
     }
   });
 
-  // Load diff
   const loading = $('#loading');
   const errorMsg = $('#error-msg');
   const filesChanged = $('#files-changed');
@@ -367,9 +389,19 @@ async function init() {
     const res = await fetch('/api/diff');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load diff');
+
+    state.patches = data.patches || [];
+    state.currentPatchIdx = 0;
+
+    $('#bug-id-display').textContent = data.bugId;
+    $('#worktree-path').textContent = data.worktreePath;
+
     loading.style.display = 'none';
     filesChanged.style.display = '';
-    renderDiff(data);
+
+    renderTabs();
+    renderCurrentPatch();
+    updateSubmitButton();
   } catch (err) {
     loading.style.display = 'none';
     errorMsg.style.display = '';

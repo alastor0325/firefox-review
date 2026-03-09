@@ -27,6 +27,7 @@ function escapeHtml(str) {
 
 // ── Auto-save ──────────────────────────────────────────────────────────────
 let saveTimer = null;
+let savedPromptText = null;
 
 function scheduleAutoSave() {
   clearTimeout(saveTimer);
@@ -59,11 +60,26 @@ async function saveState() {
   }
 }
 
+function allPatchesFinished() {
+  return state.patches.length > 0 && state.patches.every(
+    (p) => state.approved.has(p.hash) || state.denied.has(p.hash) || state.skipped.has(p.hash)
+  );
+}
+
 function updateCurrentPrompt(prompt) {
+  savedPromptText = prompt;
+  refreshPromptBar();
+}
+
+function refreshPromptBar() {
   const bar = $('#current-prompt-bar');
   if (!bar) return;
-  bar.dataset.prompt = prompt;
-  bar.style.display = '';
+  if (savedPromptText && allPatchesFinished()) {
+    bar.dataset.prompt = savedPromptText;
+    bar.style.display = '';
+  } else {
+    bar.style.display = 'none';
+  }
 }
 
 // ── Comment management ─────────────────────────────────────────────────────
@@ -124,6 +140,7 @@ function skipPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -132,6 +149,7 @@ function unskipPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -141,6 +159,7 @@ function denyPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -149,6 +168,7 @@ function undenyPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -158,6 +178,7 @@ function approvePatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -166,6 +187,7 @@ function unapprovePatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -663,7 +685,7 @@ async function init() {
       if (saved.skipped) state.skipped = new Set(saved.skipped);
       if (saved.approved) state.approved = new Set(saved.approved);
       if (saved.denied) state.denied = new Set(saved.denied);
-      if (saved.prompt) updateCurrentPrompt(saved.prompt);
+      if (saved.prompt) savedPromptText = saved.prompt;
     }
 
     state.patches = data.patches || [];
@@ -678,6 +700,7 @@ async function init() {
     renderTabs();
     renderCurrentPatch();
     updateSubmitButton();
+    refreshPromptBar();
   } catch (err) {
     loading.style.display = 'none';
     errorMsg.style.display = '';

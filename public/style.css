@@ -711,15 +711,25 @@ tr.comment-display-row td {
   color: #8b949e;
   font-weight: 600;
 }
-.commit-msg-text {
-  padding: 6px 24px 8px;
+.commit-msg-subject {
+  padding: 6px 24px 4px;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
+  font-weight: 600;
   color: #e6edf3;
-  background: #0d1117;
   transition: background 0.15s;
 }
-.commit-msg-text:hover { background: #1c2128; }
+.commit-msg-text {
+  padding: 0 24px 8px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  color: #8b949e;
+  white-space: pre-wrap;
+  transition: background 0.15s;
+}
+.commit-msg-text-empty { padding: 0; }
+.commit-msg-subject:hover,
+.commit-msg-text:not(.commit-msg-text-empty):hover { background: #1c2128; }
 
 /* ── Revision detection ── */
 .patch-tab.updated .tab-updated-icon {

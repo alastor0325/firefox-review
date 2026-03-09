@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm link:*)",
+      "Bash(firefox-review:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(git:*)"
+    ]
+  }
+}

@@ -232,12 +232,74 @@ describe('POST /api/submit', () => {
     expect(skippedArg).toEqual([]);
   });
 
+  test('passes approvedHashes to submitReview when provided', async () => {
+    const app = makeApp();
+    await request(app).post('/api/submit').send({
+      ...validBody,
+      approvedHashes: ['bbb222'],
+    });
+    const approvedArg = submitReview.mock.calls[0][7];
+    expect(approvedArg).toEqual(['bbb222']);
+  });
+
+  test('passes empty approvedHashes when not provided', async () => {
+    const app = makeApp();
+    await request(app).post('/api/submit').send(validBody);
+    const approvedArg = submitReview.mock.calls[0][7];
+    expect(approvedArg).toEqual([]);
+  });
+
   test('returns 500 when submitReview throws', async () => {
     submitReview.mockImplementation(() => { throw new Error('write failed'); });
     const app = makeApp();
     const res = await request(app).post('/api/submit').send(validBody);
     expect(res.status).toBe(500);
     expect(res.body.error).toContain('write failed');
+  });
+});
+
+// ── GET /api/state + POST /api/state ──────────────────────────────────────
+
+describe('GET /api/state', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fxreview-state-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function makeStateApp() {
+    getDiffPerCommit.mockReturnValue(PATCHES);
+    return createApp({ worktreeName: 'bugABC', worktreePath: tmpDir, mainRepoPath: '/fake/firefox' });
+  }
+
+  test('returns empty object when no state file exists', async () => {
+    const app = makeStateApp();
+    const res = await request(app).get('/api/state');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({});
+  });
+
+  test('returns ok and state can be retrieved via GET', async () => {
+    const app = makeStateApp();
+    const payload = {
+      comments: { aaa111: { 'file.cpp': { n5: { text: 'fix this' } } } },
+      generalComments: { aaa111: 'overall concern' },
+      skipped: ['bbb222'],
+      approved: [],
+    };
+    const postRes = await request(app).post('/api/state').send(payload);
+    expect(postRes.status).toBe(200);
+    expect(postRes.body.ok).toBe(true);
+
+    const getRes = await request(app).get('/api/state');
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.skipped).toEqual(['bbb222']);
+    expect(getRes.body.generalComments.aaa111).toBe('overall concern');
+  });
+
+  test('approved hashes are persisted and retrieved', async () => {
+    const app = makeStateApp();
+    await request(app).post('/api/state').send({ approved: ['aaa111'], skipped: [], comments: {}, generalComments: {} });
+    const res = await request(app).get('/api/state');
+    expect(res.body.approved).toEqual(['aaa111']);
   });
 });
 

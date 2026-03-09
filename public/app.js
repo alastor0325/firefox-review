@@ -7,6 +7,7 @@ const state = {
   comments: {},
   generalComments: {},  // free-form patch-level feedback, keyed by patchHash
   skipped: new Set(),   // patchHashes the reviewer chose to skip
+  approved: new Set(),  // patchHashes the reviewer approved
   patches: [],
   currentPatchIdx: 0,
 };
@@ -23,6 +24,37 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ── Auto-save ──────────────────────────────────────────────────────────────
+let saveTimer = null;
+
+function scheduleAutoSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 500);
+}
+
+async function saveState() {
+  const indicator = $('#autosave-status');
+  if (indicator) indicator.textContent = 'Saving…';
+  try {
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comments: state.comments,
+        generalComments: state.generalComments,
+        skipped: [...state.skipped],
+        approved: [...state.approved],
+      }),
+    });
+    if (indicator) {
+      indicator.textContent = 'Saved';
+      setTimeout(() => { if (indicator) indicator.textContent = ''; }, 2000);
+    }
+  } catch {
+    if (indicator) indicator.textContent = 'Save failed';
+  }
+}
+
 // ── Comment management ─────────────────────────────────────────────────────
 function lineKey(line) {
   return line.newLineNum != null ? `n${line.newLineNum}` : `r${line.oldLineNum}`;
@@ -37,6 +69,7 @@ function setComment(patchHash, filePath, key, commentObj) {
   if (!state.comments[patchHash][filePath]) state.comments[patchHash][filePath] = {};
   state.comments[patchHash][filePath][key] = commentObj;
   updateSubmitButton();
+  scheduleAutoSave();
 }
 
 function deleteComment(patchHash, filePath, key) {
@@ -46,6 +79,7 @@ function deleteComment(patchHash, filePath, key) {
     if (Object.keys(byFile[filePath]).length === 0) delete byFile[filePath];
   }
   updateSubmitButton();
+  scheduleAutoSave();
 }
 
 function commentsForPatch(patchHash) {
@@ -70,6 +104,7 @@ function getGeneralComment(patchHash) {
 function setGeneralComment(patchHash, text) {
   state.generalComments[patchHash] = text;
   updateSubmitButton();
+  scheduleAutoSave();
 }
 
 // ── Skip management ────────────────────────────────────────────────────────
@@ -78,6 +113,7 @@ function skipPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  scheduleAutoSave();
 }
 
 function unskipPatch(hash) {
@@ -85,6 +121,24 @@ function unskipPatch(hash) {
   renderTabs();
   renderCurrentPatch();
   updateSubmitButton();
+  scheduleAutoSave();
+}
+
+// ── Approve management ─────────────────────────────────────────────────────
+function approvePatch(hash) {
+  state.approved.add(hash);
+  renderTabs();
+  renderCurrentPatch();
+  updateSubmitButton();
+  scheduleAutoSave();
+}
+
+function unapprovePatch(hash) {
+  state.approved.delete(hash);
+  renderTabs();
+  renderCurrentPatch();
+  updateSubmitButton();
+  scheduleAutoSave();
 }
 
 // ── Submit button state ────────────────────────────────────────────────────
@@ -95,17 +149,21 @@ function updateSubmitButton() {
   if (!patch) return;
 
   const isSkipped = state.skipped.has(patch.hash);
+  const isApproved = state.approved.has(patch.hash);
   const count = commentsForPatch(patch.hash).length;
   const patchLabel = state.patches.length > 1 ? ` for Part ${state.currentPatchIdx + 1}` : '';
 
   btn.textContent = `Submit Review${patchLabel} to Claude`;
 
-  const generalComment = patch ? getGeneralComment(patch.hash).trim() : '';
+  const generalComment = getGeneralComment(patch.hash).trim();
   const hasFeedback = count > 0 || generalComment.length > 0;
 
   if (isSkipped) {
     btn.disabled = true;
     warn.textContent = 'Patch skipped — no review to submit';
+  } else if (isApproved) {
+    btn.disabled = true;
+    warn.textContent = 'Patch approved — no issues to submit';
   } else if (!hasFeedback) {
     btn.disabled = true;
     warn.textContent = 'Add a general comment or click a line to comment';
@@ -310,19 +368,22 @@ function renderTabs() {
 
   state.patches.forEach((patch, idx) => {
     const isSkipped = state.skipped.has(patch.hash);
+    const isApproved = state.approved.has(patch.hash);
     const commentCount = commentsForPatch(patch.hash).length;
 
     const tab = document.createElement('button');
     tab.className = 'patch-tab' +
       (idx === state.currentPatchIdx ? ' active' : '') +
-      (isSkipped ? ' skipped' : '');
+      (isSkipped ? ' skipped' : '') +
+      (isApproved ? ' approved' : '');
 
-    const badge = commentCount > 0 && !isSkipped
+    const badge = commentCount > 0 && !isSkipped && !isApproved
       ? ` <span class="tab-badge">${commentCount}</span>`
       : '';
     const skippedIcon = isSkipped ? ' <span class="tab-skipped-icon">⊘</span>' : '';
+    const approvedIcon = isApproved ? ' <span class="tab-approved-icon">✓</span>' : '';
 
-    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}</span>`;
+    tab.innerHTML = `<span class="tab-part">Part ${idx + 1}</span><span class="tab-msg">${escapeHtml(patch.message)}${badge}${skippedIcon}${approvedIcon}</span>`;
     tab.addEventListener('click', () => switchPatch(idx));
     tabsEl.appendChild(tab);
   });
@@ -347,21 +408,38 @@ function renderCurrentPatch() {
   }
 
   const isSkipped = state.skipped.has(patch.hash);
+  const isApproved = state.approved.has(patch.hash);
   const patchNum = state.currentPatchIdx + 1;
   const total = state.patches.length;
 
   // Patch heading row
   const heading = document.createElement('div');
-  heading.className = 'patch-heading' + (isSkipped ? ' patch-heading-skipped' : '');
+  heading.className = 'patch-heading' +
+    (isSkipped ? ' patch-heading-skipped' : '') +
+    (isApproved ? ' patch-heading-approved' : '');
   heading.innerHTML = `
     <span class="patch-heading-label">Part ${patchNum}${total > 1 ? ` of ${total}` : ''}</span>
     <span class="patch-heading-msg">${escapeHtml(patch.message)}</span>
     <span class="patch-heading-hash">${escapeHtml(patch.hash)}</span>`;
 
-  // Skip / Unskip button
+  // Approve + Skip buttons grouped at the right
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'patch-heading-actions';
+
+  const approveBtn = document.createElement('button');
+  approveBtn.className = isApproved ? 'btn-unapprove' : 'btn-approve';
+  approveBtn.textContent = isApproved ? 'Approved ✓' : 'Approve';
+  approveBtn.addEventListener('click', () => {
+    if (state.approved.has(patch.hash)) {
+      unapprovePatch(patch.hash);
+    } else {
+      approvePatch(patch.hash);
+    }
+  });
+
   const skipBtn = document.createElement('button');
   skipBtn.className = isSkipped ? 'btn-unskip' : 'btn-skip';
-  skipBtn.textContent = isSkipped ? 'Undo skip' : 'Skip this patch';
+  skipBtn.textContent = isSkipped ? 'Undo skip' : 'Skip';
   skipBtn.addEventListener('click', () => {
     if (state.skipped.has(patch.hash)) {
       unskipPatch(patch.hash);
@@ -369,10 +447,13 @@ function renderCurrentPatch() {
       skipPatch(patch.hash);
     }
   });
-  heading.appendChild(skipBtn);
+
+  btnGroup.appendChild(approveBtn);
+  btnGroup.appendChild(skipBtn);
+  heading.appendChild(btnGroup);
   container.appendChild(heading);
 
-  // General comment box (always shown, even when skipped so user can read it)
+  // General comment box (always shown so user can read it even when skipped/approved)
   const generalBox = document.createElement('div');
   generalBox.className = 'general-comment-box';
   generalBox.innerHTML = `
@@ -384,10 +465,21 @@ function renderCurrentPatch() {
   container.appendChild(generalBox);
 
   const textarea = generalBox.querySelector('textarea');
-  if (isSkipped) textarea.disabled = true;
+  if (isSkipped || isApproved) textarea.disabled = true;
   textarea.addEventListener('input', () => setGeneralComment(patch.hash, textarea.value));
 
-  // If skipped, show a notice instead of the diff
+  // Approved notice — show instead of diff
+  if (isApproved) {
+    const notice = document.createElement('div');
+    notice.className = 'approve-notice';
+    notice.innerHTML = `
+      <span class="approve-notice-icon">✓</span>
+      <span>This patch was approved — no issues found. Click <strong>Approved ✓</strong> to undo.</span>`;
+    container.appendChild(notice);
+    return;
+  }
+
+  // Skip notice — show instead of diff
   if (isSkipped) {
     const notice = document.createElement('div');
     notice.className = 'skip-notice';
@@ -415,7 +507,8 @@ function renderCurrentPatch() {
 async function submitReview() {
   const patch = currentPatch();
   const comments = patch ? commentsForPatch(patch.hash) : [];
-  if (comments.length === 0) return;
+  const generalComment = patch ? getGeneralComment(patch.hash).trim() : '';
+  if (comments.length === 0 && !generalComment) return;
 
   const btn = $('#btn-submit');
   btn.disabled = true;
@@ -428,8 +521,9 @@ async function submitReview() {
       body: JSON.stringify({
         patchHash: patch.hash,
         comments,
-        generalComment: getGeneralComment(patch.hash).trim(),
+        generalComment,
         skippedHashes: [...state.skipped],
+        approvedHashes: [...state.approved],
       }),
     });
     const json = await res.json();
@@ -476,9 +570,18 @@ async function init() {
   const filesChanged = $('#files-changed');
 
   try {
-    const res = await fetch('/api/diff');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load diff');
+    const [diffRes, stateRes] = await Promise.all([fetch('/api/diff'), fetch('/api/state')]);
+
+    const data = await diffRes.json();
+    if (!diffRes.ok) throw new Error(data.error || 'Failed to load diff');
+
+    if (stateRes.ok) {
+      const saved = await stateRes.json();
+      if (saved.comments) state.comments = saved.comments;
+      if (saved.generalComments) state.generalComments = saved.generalComments;
+      if (saved.skipped) state.skipped = new Set(saved.skipped);
+      if (saved.approved) state.approved = new Set(saved.approved);
+    }
 
     state.patches = data.patches || [];
     state.currentPatchIdx = 0;

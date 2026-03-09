@@ -442,6 +442,7 @@ body {
   font-size: 13px;
   color: #e6edf3;
   word-break: break-all;
+  user-select: text;
 }
 
 .file-stats {

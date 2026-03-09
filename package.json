@@ -8,7 +8,8 @@
   "scripts": {
     "test": "jest --testPathPattern=test/ --forceExit --silent",
     "test:watch": "jest --testPathPattern=test/ --watch --forceExit",
-    "test:coverage": "jest --testPathPattern=test/ --coverage --forceExit --silent"
+    "test:coverage": "jest --testPathPattern=test/ --coverage --forceExit --silent",
+    "dev": "nodemon --watch src --watch public --watch bin bin/firefox-review.js"
   },
   "jest": {
     "testEnvironment": "node",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "jest": "^29.0.0",
+    "nodemon": "^3.1.14",
     "supertest": "^6.3.0"
   }
 }

@@ -1,5 +1,7 @@
 'use strict';
 
+const SERVER_START = String(Date.now()); // unique token per process — used for browser auto-reload
+
 const express = require('express');
 const path = require('path');
 const net = require('net');
@@ -149,6 +151,16 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // GET /api/reload — SSE endpoint; emits server start token so the browser can detect restarts
+  app.get('/api/reload', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${SERVER_START}\n\n`);
+    const interval = setInterval(() => res.write(': ping\n\n'), 15000);
+    req.on('close', () => clearInterval(interval));
   });
 
   // GET /api/patchdiff/:hash — return diff for a single commit hash (for revision comparison)

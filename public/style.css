@@ -568,7 +568,8 @@ tr.comment-display-row td {
 
 #result-feedback-path { color: #e6edf3; font-size: 12px; }
 
-#result-command {
+#result-prompt {
+  width: 100%;
   background: #0d1117;
   border: 1px solid #30363d;
   border-radius: 6px;
@@ -576,12 +577,15 @@ tr.comment-display-row td {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 12px;
   color: #e6edf3;
-  word-break: break-all;
-  white-space: pre-wrap;
-  margin-bottom: 12px;
+  white-space: pre;
+  resize: vertical;
+  min-height: 200px;
+  max-height: 400px;
+  outline: none;
+  margin-bottom: 4px;
 }
 
-#btn-copy-command {
+#btn-copy-prompt {
   background: #21262d;
   color: #c9d1d9;
   border: 1px solid #30363d;
@@ -591,7 +595,7 @@ tr.comment-display-row td {
   cursor: pointer;
 }
 
-#btn-copy-command:hover { background: #30363d; }
+#btn-copy-prompt:hover { background: #30363d; }
 
 #btn-close-modal {
   background: transparent;

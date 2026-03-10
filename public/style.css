@@ -9,14 +9,18 @@ body {
   line-height: 1.5;
 }
 
+/* ── Sticky top bar ── */
+#top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
 /* ── Header ── */
 #header {
   background: #161b22;
   border-bottom: 1px solid #30363d;
   padding: 16px 24px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
   display: flex;
   align-items: flex-start;
   gap: 24px;
@@ -95,9 +99,6 @@ body {
 #patch-tabs-bar {
   background: #161b22;
   border-bottom: 1px solid #30363d;
-  position: sticky;
-  top: 65px;   /* below header */
-  z-index: 99;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: #484f58 #161b22;

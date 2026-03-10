@@ -29,30 +29,35 @@
     <a href="https://github.com/alastor0325/firefox-review" style="margin-left:auto;">View on GitHub →</a>
   </div>
 
-  <!-- ── Header ── -->
-  <div id="header">
-    <div id="header-left">
-      <h1>firefox-review · <span id="bug-id-display"></span></h1>
-      <div id="worktree-path"></div>
-    </div>
-    <div id="submit-area">
-      <button id="btn-submit" disabled>Generate Review Prompt</button>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
-        <span id="submit-warning">Review at least one patch before generating the prompt</span>
-        <span id="autosave-status"></span>
+  <!-- ── Sticky top bar (header + prompt bar + patch tabs) ── -->
+  <div id="top-bar">
+
+    <!-- ── Header ── -->
+    <div id="header">
+      <div id="header-left">
+        <h1>firefox-review · <span id="bug-id-display"></span></h1>
+        <div id="worktree-path"></div>
+      </div>
+      <div id="submit-area">
+        <button id="btn-submit" disabled>Generate Review Prompt</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
+          <span id="submit-warning">Review at least one patch before generating the prompt</span>
+          <span id="autosave-status"></span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- ── Current prompt bar ── -->
-  <div id="current-prompt-bar" style="display:none;">
-    <span id="current-prompt-label">Review prompt ready</span>
-    <button id="btn-copy-current-prompt">Copy current prompt</button>
-  </div>
+    <!-- ── Current prompt bar ── -->
+    <div id="current-prompt-bar" style="display:none;">
+      <span id="current-prompt-label">Review prompt ready</span>
+      <button id="btn-copy-current-prompt">Copy current prompt</button>
+    </div>
 
-  <!-- ── Patch tabs ── -->
-  <div id="patch-tabs-bar" style="display:none;">
-    <div id="patch-tabs"></div>
+    <!-- ── Patch tabs ── -->
+    <div id="patch-tabs-bar" style="display:none;">
+      <div id="patch-tabs"></div>
+    </div>
+
   </div>
 
   <!-- ── Loading / error ── -->

@@ -730,6 +730,10 @@ tr.comment-display-row td {
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 .btn-toggle-revision:hover { background: #30363d; }
 .btn-toggle-revision.active {
@@ -737,6 +741,8 @@ tr.comment-display-row td {
   border-color: #388bfd;
   color: #79c0ff;
 }
+.rev-btn-label { font-weight: 600; }
+.rev-btn-date { font-size: 10px; opacity: 0.7; }
 
 .diff-revision-header {
   padding: 6px 24px;

@@ -8,7 +8,7 @@ const net = require('net');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getDiffPerCommit, getDiffForCommit } = require('./git');
+const { getHeadHash, getDiffPerCommit, getDiffForCommit } = require('./git');
 const { submitReview } = require('./claude');
 
 /**
@@ -51,14 +51,17 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  // Cache patches so we only compute once per app instance
+  // Cache patches, invalidated automatically when the worktree HEAD changes
   let patchesCache = null;
+  let cachedHeadHash = null;
 
   function loadData() {
-    if (patchesCache) return;
+    const currentHead = getHeadHash(worktreePath);
+    if (patchesCache && cachedHeadHash === currentHead) return;
     console.log('Computing git diff...');
     try {
       patchesCache = getDiffPerCommit(worktreePath, mainRepoPath);
+      cachedHeadHash = currentHead;
       const totalFiles = patchesCache.reduce((n, p) => n + p.files.length, 0);
       console.log(
         `Found ${patchesCache.length} patch(es), ${totalFiles} changed file(s) total.`
@@ -145,6 +148,15 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
         deniedHashes
       );
       res.json({ ok: true, feedbackPath, prompt });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/headhash — return current HEAD hash so the client can detect when the codebase changes
+  app.get('/api/headhash', (req, res) => {
+    try {
+      res.json({ hash: getHeadHash(worktreePath) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

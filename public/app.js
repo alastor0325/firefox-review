@@ -803,11 +803,41 @@ async function submitReview() {
   }
 }
 
+// ── Drag-to-scroll on patch tabs bar ───────────────────────────────────────
+function initTabsDragScroll() {
+  const bar = $('#patch-tabs-bar');
+  if (!bar) return;
+  let dragging = false;
+  let startX = 0;
+  let startScroll = 0;
+
+  bar.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    startX = e.clientX;
+    startScroll = bar.scrollLeft;
+    bar.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    bar.scrollLeft = startScroll - (e.clientX - startX);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    bar.style.cursor = '';
+  });
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 async function init() {
   updateSubmitButton();
 
   $('#btn-submit').addEventListener('click', submitReview);
+  initTabsDragScroll();
 
   $('#btn-copy-prompt').addEventListener('click', () => {
     const prompt = $('#result-prompt').value;

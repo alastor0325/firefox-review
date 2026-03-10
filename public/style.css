@@ -102,6 +102,8 @@ body {
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: #484f58 #161b22;
+  cursor: grab;
+  user-select: none;
 }
 
 #patch-tabs {

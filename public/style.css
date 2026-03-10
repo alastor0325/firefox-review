@@ -9,6 +9,30 @@ body {
   line-height: 1.5;
 }
 
+/* ── Update notification banner ── */
+#update-banner {
+  background: #2d2200;
+  border-bottom: 1px solid #9e6a03;
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #d29922;
+  font-size: 13px;
+}
+#update-banner #btn-reload-page {
+  padding: 4px 12px;
+  background: #9e6a03;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+#update-banner #btn-reload-page:hover {
+  background: #bb8009;
+}
+
 /* ── Sticky top bar ── */
 #top-bar {
   position: sticky;

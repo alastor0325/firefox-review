@@ -11,6 +11,12 @@
   <!-- ── Sticky top bar (header + prompt bar + patch tabs) ── -->
   <div id="top-bar">
 
+    <!-- ── Update notification banner (shown when worktree HEAD changes) ── -->
+    <div id="update-banner" style="display:none;">
+      <span>Codebase updated — patches may have changed.</span>
+      <button id="btn-reload-page">Reload</button>
+    </div>
+
     <!-- ── Header ── -->
     <div id="header">
       <div id="header-left">

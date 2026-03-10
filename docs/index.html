@@ -32,6 +32,12 @@
   <!-- ── Sticky top bar (header + prompt bar + patch tabs) ── -->
   <div id="top-bar">
 
+    <!-- ── Update notification banner ── -->
+    <div id="update-banner" style="display:none;">
+      <span>Codebase updated — patches may have changed.</span>
+      <button id="btn-reload-page">Reload</button>
+    </div>
+
     <!-- ── Header ── -->
     <div id="header">
       <div id="header-left">
@@ -484,6 +490,13 @@
           feedbackPath: '/Users/dev/firefox-bug-1234567/REVIEW_FEEDBACK_bug-1234567.md',
           prompt: 'Please read the review feedback at /Users/dev/firefox-bug-1234567/REVIEW_FEEDBACK_bug-1234567.md and apply all the changes described there to your implementation in worktree firefox-bug-1234567.',
         }),
+      });
+    }
+    // GET /api/headhash (update detection — always returns same hash in demo)
+    if (url === '/api/headhash') {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ hash: 'a1b2c3d4' }),
       });
     }
     // GET /api/patchdiff/:hash (historical revision diffs)

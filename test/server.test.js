@@ -10,6 +10,7 @@ const net = require('net');
 // ── Mock git.js and claude.js before requiring server.js ──────────────────
 
 jest.mock('../src/git', () => ({
+  getHeadHash: jest.fn(),
   getDiffPerCommit: jest.fn(),
   getDiffForCommit: jest.fn(),
 }));
@@ -18,7 +19,7 @@ jest.mock('../src/claude', () => ({
   submitReview: jest.fn(),
 }));
 
-const { getDiffPerCommit, getDiffForCommit } = require('../src/git');
+const { getHeadHash, getDiffPerCommit, getDiffForCommit } = require('../src/git');
 const { submitReview }     = require('../src/claude');
 const { createApp, findAvailablePort } = require('../src/server');
 
@@ -74,6 +75,7 @@ function makeApp() {
 
 describe('GET /api/diff', () => {
   beforeEach(() => {
+    getHeadHash.mockReturnValue('abc123');
     getDiffPerCommit.mockReset();
   });
 
@@ -107,12 +109,43 @@ describe('GET /api/diff', () => {
     expect(res.body.error).toContain('git failed');
   });
 
-  test('caches result — getDiffPerCommit called only once across multiple requests', async () => {
+  test('caches result — getDiffPerCommit called only once when HEAD does not change', async () => {
     getDiffPerCommit.mockReturnValue(PATCHES);
     const app = makeApp();
     await request(app).get('/api/diff');
     await request(app).get('/api/diff');
     expect(getDiffPerCommit).toHaveBeenCalledTimes(1);
+  });
+
+  test('recomputes when HEAD hash changes between requests', async () => {
+    getDiffPerCommit.mockReturnValue(PATCHES);
+    getHeadHash
+      .mockReturnValueOnce('abc123')
+      .mockReturnValueOnce('def456');
+    const app = makeApp();
+    await request(app).get('/api/diff');
+    await request(app).get('/api/diff');
+    expect(getDiffPerCommit).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── GET /api/headhash ──────────────────────────────────────────────────────
+
+describe('GET /api/headhash', () => {
+  test('returns current HEAD hash', async () => {
+    getHeadHash.mockReturnValue('deadbeef');
+    const app = makeApp();
+    const res = await request(app).get('/api/headhash');
+    expect(res.status).toBe(200);
+    expect(res.body.hash).toBe('deadbeef');
+  });
+
+  test('returns 500 when git throws', async () => {
+    getHeadHash.mockImplementation(() => { throw new Error('not a repo'); });
+    const app = makeApp();
+    const res = await request(app).get('/api/headhash');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain('not a repo');
   });
 });
 
@@ -120,6 +153,7 @@ describe('GET /api/diff', () => {
 
 describe('POST /api/submit', () => {
   beforeEach(() => {
+    getHeadHash.mockReturnValue('abc123');
     getDiffPerCommit.mockReset();
     submitReview.mockReset();
     getDiffPerCommit.mockReturnValue(PATCHES);
@@ -244,6 +278,7 @@ describe('POST /api/submit', () => {
 describe('GET /api/state', () => {
   let tmpDir;
   beforeEach(() => {
+    getHeadHash.mockReturnValue('abc123');
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fxreview-state-'));
     getDiffPerCommit.mockReset();
     submitReview.mockReset();
@@ -311,6 +346,7 @@ describe('GET /api/state', () => {
 
 describe('GET /api/patchdiff/:hash', () => {
   beforeEach(() => {
+    getHeadHash.mockReturnValue('abc123');
     getDiffPerCommit.mockReset();
     getDiffForCommit.mockReset();
     getDiffPerCommit.mockReturnValue(PATCHES);

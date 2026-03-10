@@ -4,6 +4,15 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 /**
+ * Return the current HEAD commit hash of the given repo/worktree.
+ */
+function getHeadHash(worktreePath) {
+  return execSync(`git -C "${worktreePath}" rev-parse HEAD`, {
+    encoding: 'utf8',
+  }).trim();
+}
+
+/**
  * Find the merge-base between the worktree HEAD and the main repo HEAD.
  */
 function getMergeBase(worktreePath, mainRepoPath) {
@@ -288,4 +297,4 @@ function discoverWorktrees(mainRepoPath) {
   return parseWorktreeList(output, mainRepoPath);
 }
 
-module.exports = { getCommits, getDiffPerCommit, getDiffForCommit, getMergeBase, parseDiff, parseCommitBody, parseWorktreeList, discoverWorktrees };
+module.exports = { getHeadHash, getCommits, getDiffPerCommit, getDiffForCommit, getMergeBase, parseDiff, parseCommitBody, parseWorktreeList, discoverWorktrees };

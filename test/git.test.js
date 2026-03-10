@@ -5,7 +5,7 @@ jest.mock('child_process', () => ({
 }));
 
 const { execSync } = require('child_process');
-const { parseDiff, parseWorktreeList, getDiffForCommit, parseCommitBody } = require('../src/git');
+const { getHeadHash, parseDiff, parseWorktreeList, getDiffForCommit, parseCommitBody } = require('../src/git');
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -362,5 +362,18 @@ diff --git a/foo.js b/foo.js`;
     const result = parseCommitBody(raw);
     expect(result).toBe('Subject only');
     expect(result).not.toMatch(/\n$/);
+  });
+});
+
+// ── getHeadHash ────────────────────────────────────────────────────────────
+
+describe('getHeadHash', () => {
+  test('returns trimmed HEAD hash', () => {
+    execSync.mockReturnValue('abc1234def5678\n');
+    expect(getHeadHash('/path/to/repo')).toBe('abc1234def5678');
+    expect(execSync).toHaveBeenCalledWith(
+      'git -C "/path/to/repo" rev-parse HEAD',
+      { encoding: 'utf8' }
+    );
   });
 });

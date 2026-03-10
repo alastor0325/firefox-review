@@ -911,5 +911,34 @@ async function init() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// ── Update detection ───────────────────────────────────────────────────────
+// Polls /api/headhash every 5 seconds; shows a reload banner when the
+// worktree HEAD changes (i.e. commits were amended or added).
+async function startUpdatePolling() {
+  let initialHash = null;
+  try {
+    const res = await fetch('/api/headhash');
+    if (!res.ok) return;
+    ({ hash: initialHash } = await res.json());
+  } catch {
+    return; // endpoint unavailable (e.g. demo mode) — silently skip
+  }
+
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/headhash');
+      if (!res.ok) return;
+      const { hash } = await res.json();
+      if (hash !== initialHash) {
+        $('#update-banner').style.display = '';
+      }
+    } catch { /* ignore network errors */ }
+  }, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  startUpdatePolling();
+  $('#btn-reload-page').addEventListener('click', () => location.reload());
+});
 

@@ -662,8 +662,11 @@ function renderCurrentPatch() {
       const isSelected = (rev.hash === effectiveHash) || (isCurrent && selectedHash === null);
       const btn = document.createElement('button');
       btn.className = 'btn-toggle-revision' + (isSelected ? ' active' : '');
-      btn.textContent = `Rev ${i + 1}${isCurrent ? ' · current' : ''}`;
-      btn.title = rev.hash + (rev.savedAt ? `  ·  ${new Date(rev.savedAt).toLocaleString()}` : '');
+      const dateStr = rev.savedAt
+        ? new Date(rev.savedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+      btn.innerHTML = `<span class="rev-btn-label">Rev ${i + 1}${isCurrent ? ' · current' : ''}</span>${dateStr ? `<span class="rev-btn-date">${escapeHtml(dateStr)}</span>` : ''}`;
+      btn.title = rev.hash;
       btn.addEventListener('click', () => {
         state.showRevision[state.currentPatchIdx] = isCurrent ? null : rev.hash;
         renderCurrentPatch();

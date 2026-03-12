@@ -8,7 +8,7 @@ const net = require('net');
 const os = require('os');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getHeadHash, getDiffPerCommit, getDiffForCommit, getDiffBetweenCommits } = require('./git');
+const { getHeadHash, getDiffPerCommit, getDiffForCommit, getDiffBetweenCommits, getFileLines } = require('./git');
 const { submitReview } = require('./claude');
 
 /**
@@ -198,6 +198,27 @@ function createApp({ worktreeName, worktreePath, mainRepoPath }) {
       res.json({ hash, files });
     } catch (err) {
       res.status(404).json({ error: `Commit ${hash} not found: ${err.message}` });
+    }
+  });
+
+  // GET /api/filecontext?hash=<hash>&file=<path>&start=<n>&end=<n>
+  // Returns lines from the new version of a file at the given commit.
+  app.get('/api/filecontext', (req, res) => {
+    const { hash, file, start, end } = req.query;
+    const hashRe = /^[0-9a-f]{4,40}$/i;
+    if (!hash || !hashRe.test(hash) || !file || !start || !end) {
+      return res.status(400).json({ error: 'Invalid parameters.' });
+    }
+    const startLine = parseInt(start, 10);
+    const endLine   = parseInt(end,   10);
+    if (isNaN(startLine) || isNaN(endLine) || startLine < 1 || endLine < startLine) {
+      return res.status(400).json({ error: 'Invalid line range.' });
+    }
+    try {
+      const result = getFileLines(worktreePath, hash, file, startLine, endLine);
+      res.json(result);
+    } catch (err) {
+      res.status(404).json({ error: `Could not read file: ${err.message}` });
     }
   });
 

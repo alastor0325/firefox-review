@@ -282,6 +282,110 @@ body {
 .general-comment-textarea:disabled { opacity: 0.4; cursor: not-allowed; }
 .general-comment-textarea::placeholder { color: #484f58; }
 
+/* ── Expand context rows ── */
+.expand-context-row td {
+  background: #0d1117;
+  border-top: 1px dashed #21262d;
+  border-bottom: 1px dashed #21262d;
+  padding: 4px 8px;
+}
+
+.expand-context-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-exp {
+  background: transparent;
+  color: #58a6ff;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-exp:hover {
+  background: #1c2128;
+  border-color: #58a6ff55;
+}
+
+.line-context-expanded td {
+  background: #0c1318;
+}
+
+/* ── Comments summary box ── */
+.comments-summary-box {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.comments-summary-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.comments-summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comments-summary-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #0d1117;
+  border: 1px solid #21262d;
+  min-width: 0;
+}
+
+.comments-summary-item:hover {
+  background: #1c2128;
+  border-color: #58a6ff44;
+}
+
+.comments-summary-location {
+  font-size: 11px;
+  font-family: monospace;
+  color: #58a6ff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.comments-summary-text {
+  font-size: 12px;
+  color: #8b949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.comment-scroll-highlight {
+  animation: comment-scroll-flash 1.5s ease-out;
+}
+
+@keyframes comment-scroll-flash {
+  0%   { background-color: #58a6ff33; }
+  100% { background-color: transparent; }
+}
+
 /* ── Patch heading actions (approve + skip button group) ── */
 .patch-heading-actions {
   margin-left: auto;

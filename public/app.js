@@ -400,6 +400,104 @@ function renderCommitMessageSection(container, patchHash, commitMessage, disable
 }
 
 // ── Diff rendering ─────────────────────────────────────────────────────────
+
+/**
+ * Insert an expand-context row into `table` before `insertBeforeEl` (or at
+ * the end if null).  Manages its own hidden-line range and re-renders its
+ * buttons after each expansion click.
+ *
+ * hiddenEnd may be null when the file length is not yet known (after-last-
+ * hunk case); it is updated from the server's totalLines response.
+ */
+function renderExpandRow(table, patchHash, filePath, hiddenStart, hiddenEnd, insertBeforeEl) {
+  if (hiddenEnd !== null && hiddenStart > hiddenEnd) return;
+
+  const CHUNK = 20;
+  let curStart = hiddenStart;
+  let curEnd   = hiddenEnd; // null = unknown (after last hunk)
+
+  const tr = document.createElement('tr');
+  tr.className = 'expand-context-row';
+
+  // Single delegated listener on tr — survives all tr.innerHTML replacements
+  tr.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'up')    load(curStart, Math.min(curStart + CHUNK - 1, curEnd ?? curStart + CHUNK - 1), true);
+    if (action === 'down')  load(Math.max(curEnd - CHUNK + 1, curStart), curEnd, false);
+    if (action === 'small') load(curStart, curEnd, true);
+  });
+
+  function rebuild() {
+    const count = curEnd !== null ? curEnd - curStart + 1 : null;
+    let btns = '';
+    if (count !== null && count <= CHUNK) {
+      btns = `<button class="btn-exp" data-action="small">↕ ${count} Line${count === 1 ? '' : 's'}</button>`;
+    } else {
+      const upLabel = curStart === 1 ? 'Show First 20 Lines' : '↑ 20 Lines';
+      btns = `<button class="btn-exp" data-action="up">${upLabel}</button>`;
+      if (curEnd !== null) {
+        btns += `<button class="btn-exp" data-action="down">↓ 20 Lines</button>`;
+      }
+    }
+    tr.innerHTML = `<td colspan="3"><div class="expand-context-btns">${btns}</div></td>`;
+  }
+
+  async function load(fetchStart, fetchEnd, fromTop) {
+    const parent = tr.parentNode;
+    if (!parent) return;
+
+    tr.innerHTML = `<td colspan="3"><div class="expand-context-btns"><span class="expander-loading">Loading…</span></div></td>`;
+
+    try {
+      const resp = await fetch(
+        `/api/filecontext?hash=${encodeURIComponent(patchHash)}&file=${encodeURIComponent(filePath)}&start=${fetchStart}&end=${fetchEnd}`
+      );
+      if (!resp.ok) {
+        console.error(`filecontext: HTTP ${resp.status} for ${filePath}`);
+        rebuild();
+        return;
+      }
+      const data = await resp.json();
+
+      if (curEnd === null && data.totalLines != null) curEnd = data.totalLines;
+
+      if (!Array.isArray(data.lines) || data.lines.length === 0) {
+        if (curEnd !== null && curStart > curEnd) tr.remove();
+        else rebuild();
+        return;
+      }
+
+      // fromTop=true  → insert before tr (rows appear above the expand bar)
+      // fromTop=false → insert before tr.nextSibling (rows appear below the bar)
+      const anchor = fromTop ? tr : tr.nextSibling;
+      for (const line of data.lines) {
+        const row = document.createElement('tr');
+        row.className = 'line-context line-context-expanded';
+        row.innerHTML = `
+          <td class="ln-old">${line.oldLineNum != null ? line.oldLineNum : ''}</td>
+          <td class="ln-new">${line.newLineNum != null ? line.newLineNum : ''}</td>
+          <td class="ln-content">${escapeHtml(' ' + line.content)}</td>`;
+        parent.insertBefore(row, anchor);
+      }
+
+      if (fromTop) curStart = fetchEnd + 1;
+      else         curEnd   = fetchStart - 1;
+
+      if (curEnd !== null && curStart > curEnd) tr.remove();
+      else rebuild();
+    } catch (err) {
+      console.error('Failed to load context lines:', err);
+      rebuild();
+    }
+  }
+
+  rebuild();
+  if (insertBeforeEl) table.insertBefore(tr, insertBeforeEl);
+  else                table.appendChild(tr);
+}
+
 function countStats(hunks) {
   let added = 0, removed = 0;
   for (const hunk of hunks) {
@@ -434,11 +532,29 @@ function renderFile(fileData, patchHash) {
   const table = document.createElement('table');
   table.className = 'diff-table';
 
-  for (const hunk of fileData.hunks) {
+  for (let hi = 0; hi < fileData.hunks.length; hi++) {
+    const hunk = fileData.hunks[hi];
+
+    // Compute the hidden line range above this hunk
+    let gapStart, gapEnd;
+    if (hi === 0) {
+      gapStart = 1;
+      gapEnd   = hunk.newStart - 1;
+    } else {
+      const prev = fileData.hunks[hi - 1];
+      gapStart = prev.newStart + prev.newCount; // first line after prev hunk
+      gapEnd   = hunk.newStart - 1;             // last line before this hunk
+    }
+
     const hunkTr = document.createElement('tr');
     hunkTr.className = 'hunk-header';
     hunkTr.innerHTML = `<td colspan="3">${escapeHtml(hunk.header)}</td>`;
     table.appendChild(hunkTr);
+
+    // Insert expand row before the @@ header
+    if (gapStart <= gapEnd) {
+      renderExpandRow(table, patchHash, filePath, gapStart, gapEnd, hunkTr);
+    }
 
     for (const line of hunk.lines) {
       const tr = document.createElement('tr');
@@ -460,6 +576,8 @@ function renderFile(fileData, patchHash) {
         <td class="ln-content"><span class="line-icon">＋</span>${escapeHtml(prefix + line.content)}</td>`;
 
       const key = lineKey(line);
+      tr.dataset.filePath = filePath;
+      tr.dataset.lineKey = key;
       tr.querySelector('.ln-content').addEventListener('click', () => {
         const next = tr.nextElementSibling;
         if (next && next.classList.contains('comment-form-row')) {
@@ -475,6 +593,11 @@ function renderFile(fileData, patchHash) {
       if (getComment(patchHash, filePath, key)) {
         renderCommentDisplay(tr, patchHash, filePath, line, key);
       }
+    }
+
+    // After the last hunk: expand row for remaining lines to end of file
+    if (hi === fileData.hunks.length - 1 && hunk.newCount > 0) {
+      renderExpandRow(table, patchHash, filePath, hunk.newStart + hunk.newCount, null, null);
     }
   }
 
@@ -492,6 +615,33 @@ function renderFile(fileData, patchHash) {
 }
 
 // ── Revision detection ─────────────────────────────────────────────────────
+
+/**
+ * Migrate approved/denied hashes when patches at the same position are
+ * amended (i.e. same slot, different hash).  This preserves review decisions
+ * across rebases so the reviewer doesn't lose previously recorded approvals.
+ *
+ * Pure function — returns new Sets, does not mutate the inputs.
+ */
+function migrateApprovals(prevPatches, currPatches, approved, denied) {
+  const newApproved = new Set(approved);
+  const newDenied   = new Set(denied);
+  for (let i = 0; i < Math.min(prevPatches.length, currPatches.length); i++) {
+    const prevHash = prevPatches[i].hash;
+    const currHash = currPatches[i].hash;
+    if (prevHash === currHash) continue;
+    if (newApproved.has(prevHash)) {
+      newApproved.delete(prevHash);
+      newApproved.add(currHash);
+    }
+    if (newDenied.has(prevHash)) {
+      newDenied.delete(prevHash);
+      newDenied.add(currHash);
+    }
+  }
+  return { approved: newApproved, denied: newDenied };
+}
+
 function detectRevisionChanges() {
   if (state.patches.length === 0) return;
 
@@ -519,6 +669,9 @@ function detectRevisionChanges() {
   }
 
   if (hasChanges) {
+    const migrated = migrateApprovals(prevPatches, currentSnapshot, state.approved, state.denied);
+    state.approved = migrated.approved;
+    state.denied   = migrated.denied;
     state.revisions.push({ savedAt: new Date().toISOString(), patches: currentSnapshot });
     if (state.revisions.length > 10) state.revisions = state.revisions.slice(-10);
     scheduleAutoSave();
@@ -752,6 +905,69 @@ function renderCurrentPatch() {
   const textarea = generalBox.querySelector('textarea');
   if (isApproved) textarea.disabled = true;
   textarea.addEventListener('input', () => setGeneralComment(patch.hash, textarea.value));
+
+  // Comments summary — lists all line-level and commit-message comments with scroll-to links
+  const patchCommentsByFile = state.comments[patch.hash] || {};
+  const allLineComments = [];
+  for (const [filePath, byKey] of Object.entries(patchCommentsByFile)) {
+    if (filePath === COMMIT_FILE) continue;
+    for (const [key, commentObj] of Object.entries(byKey)) {
+      allLineComments.push({ key, ...commentObj });
+    }
+  }
+  const commitComment = getComment(patch.hash, COMMIT_FILE, COMMIT_KEY);
+  const totalCommentCount = allLineComments.length + (commitComment ? 1 : 0);
+
+  if (totalCommentCount > 0) {
+    const summaryBox = document.createElement('div');
+    summaryBox.className = 'comments-summary-box';
+
+    const summaryLabel = document.createElement('div');
+    summaryLabel.className = 'comments-summary-label';
+    summaryLabel.textContent = `Your comments (${totalCommentCount})`;
+    summaryBox.appendChild(summaryLabel);
+
+    const summaryList = document.createElement('ul');
+    summaryList.className = 'comments-summary-list';
+
+    if (commitComment) {
+      const item = document.createElement('li');
+      item.className = 'comments-summary-item';
+      item.innerHTML = `
+        <span class="comments-summary-location">Commit message</span>
+        <span class="comments-summary-text">${escapeHtml(commitComment.text)}</span>`;
+      item.addEventListener('click', () => {
+        const block = container.querySelector('.commit-msg-block');
+        if (block) block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      summaryList.appendChild(item);
+    }
+
+    for (const c of allLineComments) {
+      const shortFile = c.file.split('/').pop();
+      const item = document.createElement('li');
+      item.className = 'comments-summary-item';
+      item.innerHTML = `
+        <span class="comments-summary-location">${escapeHtml(shortFile)}:${c.line}</span>
+        <span class="comments-summary-text">${escapeHtml(c.text)}</span>`;
+      item.addEventListener('click', () => {
+        const allTrs = container.querySelectorAll('tr[data-line-key]');
+        const tr = Array.from(allTrs).find(
+          (r) => r.dataset.filePath === c.file && r.dataset.lineKey === c.key
+        );
+        if (!tr) return;
+        const next = tr.nextElementSibling;
+        const target = (next && next.classList.contains('comment-display-row')) ? next : tr;
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('comment-scroll-highlight');
+        setTimeout(() => target.classList.remove('comment-scroll-highlight'), 1500);
+      });
+      summaryList.appendChild(item);
+    }
+
+    summaryBox.appendChild(summaryList);
+    container.appendChild(summaryBox);
+  }
 
   // Deny notice — show below general comment box but before diff
   if (isDenied) {
@@ -1045,4 +1261,9 @@ document.addEventListener('DOMContentLoaded', () => {
   startUpdatePolling();
   $('#btn-reload-page').addEventListener('click', () => location.reload());
 });
+
+// Allow unit tests to import pure helpers without loading the full browser app.
+if (typeof module !== 'undefined') {
+  module.exports = { migrateApprovals };
+}
 

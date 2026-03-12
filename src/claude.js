@@ -83,6 +83,7 @@ Address each piece of feedback in the commit it belongs to. For each part with f
 1. Apply the changes only to files modified in that commit, unless a fix strictly requires touching other code.
 2. Amend the changes directly into that commit (do not create new commits). Use interactive rebase if the commit is not the tip of the branch.
 3. After all amendments are done, summarize what you changed for each feedback item.
+4. If you believe any feedback item is incorrect, misguided, or should not be applied, do NOT silently skip it. Instead, after your summary, add a section titled "## Feedback I disagree with" and list each disputed item with a brief explanation of why you think it is wrong or does not need to be addressed. This lets the reviewer know exactly which points were skipped and why.
 `;
 }
 

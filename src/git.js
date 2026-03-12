@@ -13,19 +13,31 @@ function getHeadHash(worktreePath) {
 }
 
 /**
- * Find the merge-base between the worktree HEAD and the main repo HEAD.
+ * Find the merge-base between the worktree HEAD and the upstream main branch.
+ *
+ * Prefers origin/main (always tracks mozilla-central regardless of local
+ * checkout state) to avoid false "no patches" results when the main repo is
+ * left in detached HEAD at the same commit as the worktree — a common
+ * side-effect of jj workflows.  Falls back to the main repo's HEAD.
  */
 function getMergeBase(worktreePath, mainRepoPath) {
-  const mainHead = execSync(`git -C "${mainRepoPath}" rev-parse HEAD`, {
-    encoding: 'utf8',
-  }).trim();
+  let mainTip;
+  try {
+    mainTip = execSync(
+      `git -C "${worktreePath}" rev-parse origin/main`,
+      { encoding: 'utf8' }
+    ).trim();
+  } catch {
+    mainTip = execSync(
+      `git -C "${mainRepoPath}" rev-parse HEAD`,
+      { encoding: 'utf8' }
+    ).trim();
+  }
 
-  const mergeBase = execSync(
-    `git -C "${worktreePath}" merge-base HEAD ${mainHead}`,
+  return execSync(
+    `git -C "${worktreePath}" merge-base HEAD ${mainTip}`,
     { encoding: 'utf8' }
   ).trim();
-
-  return mergeBase;
 }
 
 /**
@@ -371,7 +383,7 @@ function parseWorktreeList(output, mainRepoPath) {
       return { path: wtPath, branch };
     })
     .filter(Boolean)
-    .filter((wt) => wt.path !== mainRepoPath)
+    .filter((wt) => path.normalize(wt.path) !== path.normalize(mainRepoPath))
     .map((wt) => {
       const basename = path.basename(wt.path);
       const match = basename.match(/^firefox-(.+)$/);
@@ -393,4 +405,24 @@ function discoverWorktrees(mainRepoPath) {
   return parseWorktreeList(output, mainRepoPath);
 }
 
-module.exports = { getHeadHash, getCommits, getDiffPerCommit, getDiffForCommit, getDiffBetweenCommits, getMergeBase, parseDiff, parseCommitBody, parseWorktreeList, discoverWorktrees };
+/**
+ * Fetch a range of lines from a file at a specific commit.
+ * Returns { lines: [{type, content, newLineNum, oldLineNum}], totalLines }.
+ * Lines are 1-indexed; both start and end are inclusive.
+ */
+function getFileLines(worktreePath, hash, filePath, start, end) {
+  const raw = execSync(
+    `git -C "${worktreePath}" show "${hash}:${filePath}"`,
+    { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+  );
+  const allLines = raw.split('\n');
+  if (allLines.length > 0 && allLines[allLines.length - 1] === '') allLines.pop();
+  const totalLines = allLines.length;
+  const lines = [];
+  for (let i = start; i <= Math.min(end, totalLines); i++) {
+    lines.push({ type: 'context', content: allLines[i - 1], newLineNum: i, oldLineNum: i });
+  }
+  return { lines, totalLines };
+}
+
+module.exports = { getHeadHash, getCommits, getDiffPerCommit, getDiffForCommit, getDiffBetweenCommits, getMergeBase, parseDiff, parseCommitBody, parseWorktreeList, discoverWorktrees, getFileLines };

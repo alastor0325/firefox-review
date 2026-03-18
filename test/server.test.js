@@ -24,7 +24,7 @@ jest.mock('../src/claude', () => ({
 
 const { getHeadHash, getDiffPerCommit, getDiffForCommit, getDiffBetweenCommits, getFileLines, discoverWorktrees } = require('../src/git');
 const { submitReview }     = require('../src/claude');
-const { createApp, findAvailablePort } = require('../src/server');
+const { createApp, findAvailablePort, startServer } = require('../src/server');
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -430,6 +430,47 @@ describe('GET /api/revdiff', () => {
     const res = await request(app).get('/api/revdiff?from=aaa1111&to=bbb2222');
     expect(res.status).toBe(500);
     expect(res.body.error).toContain('bad object');
+  });
+});
+
+// ── startServer pidFile ────────────────────────────────────────────────────
+
+describe('startServer pidFile', () => {
+  let tmpDir;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fxreview-srv-'));
+    getHeadHash.mockReturnValue('abc123');
+    getDiffPerCommit.mockReturnValue(PATCHES);
+    discoverWorktrees.mockReturnValue([]);
+  });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  test('writes pid:port to pidFile after server binds', async () => {
+    const pidFile = path.join(tmpDir, 'test.pid');
+    const server = await startServer({
+      worktreeName: 'bugABC',
+      worktreePath: tmpDir,
+      mainRepoPath: '/fake/firefox',
+      pidFile,
+    });
+    try {
+      expect(fs.existsSync(pidFile)).toBe(true);
+      const content = fs.readFileSync(pidFile, 'utf8').trim();
+      const [pid, port] = content.split(':');
+      expect(Number(pid)).toBe(process.pid);
+      expect(Number(port)).toBeGreaterThan(0);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  test('does not throw when pidFile is not provided', async () => {
+    const server = await startServer({
+      worktreeName: 'bugABC',
+      worktreePath: tmpDir,
+      mainRepoPath: '/fake/firefox',
+    });
+    await new Promise((resolve) => server.close(resolve));
   });
 });
 

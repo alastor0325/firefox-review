@@ -276,12 +276,15 @@ async function startServer({ worktreeName, worktreePath, mainRepoPath, pidFile }
   const app = createApp({ worktreeName, worktreePath, mainRepoPath });
   const port = await findAvailablePort(7777);
 
-  app.listen(port, '127.0.0.1', () => {
-    const url = `http://localhost:${port}`;
-    if (pidFile) {
-      try { fs.writeFileSync(pidFile, `${process.pid}:${port}`); } catch {}
-    }
-    openBrowser(url);
+  return new Promise((resolve) => {
+    const server = app.listen(port, '127.0.0.1', () => {
+      const url = `http://localhost:${port}`;
+      if (pidFile) {
+        try { fs.writeFileSync(pidFile, `${process.pid}:${port}`); } catch {}
+      }
+      openBrowser(url);
+      resolve(server);
+    });
   });
 }
 

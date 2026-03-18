@@ -156,4 +156,8 @@ async function main() {
   startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: PID_FILE });
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { readPid, isRunning, stopDaemon, waitForPort, buildEntries };

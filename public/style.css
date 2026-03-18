@@ -7,6 +7,7 @@ body {
   color: #c9d1d9;
   font-size: 14px;
   line-height: 1.5;
+  min-width: 640px;
 }
 
 /* ── Worktree tab bar ── */

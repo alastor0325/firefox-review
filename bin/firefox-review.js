@@ -4,103 +4,132 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const readline = require('readline');
+const { spawn } = require('child_process');
 const { startServer } = require('../src/server');
 const { discoverWorktrees } = require('../src/git');
 
 const mainRepoPath = path.join(os.homedir(), 'firefox');
+const PID_FILE = path.join(os.homedir(), '.firefox-review.pid');
 
-/**
- * Build the full list of reviewable entries:
- * the main repo first, then all registered worktrees.
- */
 function buildEntries() {
   const entries = [];
-
-  // Always include the main repo itself as an option
   if (fs.existsSync(mainRepoPath)) {
     entries.push({
       path: mainRepoPath,
-      branch: null,
       worktreeName: path.basename(mainRepoPath),
       isMain: true,
     });
-  }
-
-  // Append all worktrees registered with the main repo
-  if (fs.existsSync(mainRepoPath)) {
     try {
       entries.push(...discoverWorktrees(mainRepoPath));
     } catch {
-      // Ignore if worktree list can't be read
+      // ignore
     }
   }
-
   return entries;
 }
 
-/**
- * Show a numbered list and prompt the user to pick one.
- */
-async function promptSelection(entries) {
-  console.log('\nAvailable repos / worktrees:\n');
-  entries.forEach((entry, i) => {
-    const label = entry.isMain
-      ? `${entry.worktreeName}  (main repo)`
-      : `firefox-${entry.worktreeName}`;
-    const branch = entry.branch ? `  (${entry.branch})` : '';
-    console.log(`  ${i + 1}.  ${label}${branch}`);
-  });
-  console.log('');
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(`Select [1-${entries.length}]: `, (answer) => {
-      rl.close();
-      const idx = parseInt(answer, 10) - 1;
-      if (isNaN(idx) || idx < 0 || idx >= entries.length) {
-        console.error(`Invalid selection: "${answer}"`);
-        process.exit(1);
-      }
-      resolve(entries[idx]);
-    });
+function readPid() {
+  if (!fs.existsSync(PID_FILE)) return null;
+  const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8'), 10);
+  return isNaN(pid) ? null : pid;
+}
+
+function stopDaemon() {
+  const pid = readPid();
+  if (!pid) {
+    console.log('No running firefox-review instance found.');
+    return false;
+  }
+  if (!isRunning(pid)) {
+    fs.unlinkSync(PID_FILE);
+    console.log('Cleaned up stale PID file (process was not running).');
+    return false;
+  }
+  process.kill(pid, 'SIGTERM');
+  fs.unlinkSync(PID_FILE);
+  console.log(`Stopped firefox-review (PID ${pid}).`);
+  return true;
+}
+
+function daemonize(worktreeArgs) {
+  const pid = readPid();
+  if (pid && isRunning(pid)) {
+    console.log(`firefox-review is already running (PID ${pid}).`);
+    console.log('Use --restart to restart it, or --stop to stop it.');
+    process.exit(0);
+  }
+
+  const child = spawn(process.execPath, [__filename, ...worktreeArgs], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env, FIREFOX_REVIEW_DAEMON: '1' },
   });
+  child.unref();
+  fs.writeFileSync(PID_FILE, String(child.pid));
+  console.log(`firefox-review started (PID ${child.pid}) — opening browser.`);
+  console.log('Use "firefox-review --stop" to stop it.');
+  process.exit(0);
 }
 
 async function main() {
-  const argName = process.argv[2];
+  const args = process.argv.slice(2);
+  const flag = args[0];
 
+  if (flag === '--stop') {
+    stopDaemon();
+    return;
+  }
+
+  if (flag === '--restart') {
+    stopDaemon();
+    // Brief pause to let the port free up
+    await new Promise((r) => setTimeout(r, 500));
+    daemonize(args.slice(1));
+    return;
+  }
+
+  // Not already running as daemon — fork into background
+  if (!process.env.FIREFOX_REVIEW_DAEMON) {
+    daemonize(args);
+    return;
+  }
+
+  // --- Running as daemon from here ---
+
+  // Clean up PID file on exit
+  process.on('exit', () => { try { fs.unlinkSync(PID_FILE); } catch {} });
+  process.on('SIGTERM', () => process.exit(0));
+
+  const argName = args[0];
   let worktreeName;
   let worktreePath;
 
   if (argName) {
-    // Explicit name given — reconstruct path as ~/firefox-<name>
     worktreeName = argName;
     worktreePath = path.join(os.homedir(), `firefox-${worktreeName}`);
   } else {
-    // No arg — show picker with main repo + all worktrees
     const entries = buildEntries();
-
     if (entries.length === 0) {
       console.error('No Firefox repos or worktrees found under ~/firefox.');
-      console.error('Usage: firefox-review <worktree-name>');
       process.exit(1);
     }
-
-    const selected = await promptSelection(entries);
-    worktreeName = selected.worktreeName;
-    worktreePath = selected.path;
-    console.log('');
+    const first = entries[0];
+    worktreeName = first.worktreeName;
+    worktreePath = first.path;
   }
 
   if (!fs.existsSync(worktreePath)) {
     console.error(`Error: Worktree not found at ${worktreePath}`);
     process.exit(1);
-  }
-
-  if (!fs.existsSync(mainRepoPath)) {
-    console.error(`Warning: Main Firefox repo not found at ${mainRepoPath}`);
-    console.error('Diff computation may fail without the base repo.');
   }
 
   startServer({ worktreeName, worktreePath, mainRepoPath });

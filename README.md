@@ -31,35 +31,21 @@ npm link          # makes `firefox-review` available globally
 
 ## Usage
 
-### Interactive picker (no argument)
+`firefox-review` always runs as a background daemon — it starts the server, opens your browser, and returns control to the terminal immediately. Use the worktree switcher in the UI to change worktrees at any time.
 
 ```bash
-firefox-review
+firefox-review               # start (opens browser, returns terminal)
+firefox-review --stop        # stop the running instance
+firefox-review --restart     # restart (picks up server code changes)
 ```
 
-Lists all worktrees and the main repo:
-
-```
-Available repos / worktrees:
-
-  1.  firefox  (main repo)
-  2.  firefox-my-feature    (feature-branch)
-  3.  firefox-experiment    (detached)
-
-Select [1-3]:
-```
-
-### Direct launch
+To start reviewing a specific worktree directly:
 
 ```bash
-firefox-review <worktree-name>
-
-# Examples:
-firefox-review my-feature
-firefox-review experiment
+firefox-review my-feature    # opens ~/firefox-my-feature
 ```
 
-`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`.
+`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`. If omitted, the server starts on the main repo and you can switch from the UI.
 
 The browser opens at `http://localhost:7777` automatically (increments if the port is busy).
 
@@ -191,15 +177,15 @@ npm run test:watch    # watch mode
 npm run test:coverage # coverage report
 ```
 
-To run with auto-restart on file changes (from the project directory):
+To run with auto-restart on file changes during development (bypasses daemon mode):
 
 ```bash
-npm run dev -- <worktree-name>
-# e.g.
-npm run dev -- my-feature
+FIREFOX_REVIEW_DAEMON=1 npm run dev -- my-feature
 ```
 
 nodemon watches `src/`, `public/`, and `bin/` and restarts the server on any change. Refresh the browser tab manually to pick up the new build.
+
+Alternatively, `firefox-review --restart` is sufficient for one-off server restarts when not actively editing code.
 
 Tests cover:
 - `parseDiff` — diff parsing (added/removed/context lines, multiple files, binary files, multiple hunks)

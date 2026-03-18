@@ -45,7 +45,7 @@ To start reviewing a specific worktree directly:
 firefox-review my-feature    # opens ~/firefox-my-feature
 ```
 
-`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`. If omitted, the server starts on the main repo and you can switch from the UI.
+`<worktree-name>` is the suffix of the directory: `~/firefox-<worktree-name>`. If omitted, the server starts on the first registered worktree. Switch anytime using the worktree tabs at the top of the page.
 
 The browser opens at `http://localhost:7777` automatically (increments if the port is busy).
 

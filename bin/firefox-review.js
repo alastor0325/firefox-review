@@ -39,7 +39,7 @@ function isRunning(pid) {
 
 function readPid() {
   if (!fs.existsSync(PID_FILE)) return null;
-  const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8'), 10);
+  const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').split(':')[0], 10);
   return isNaN(pid) ? null : pid;
 }
 
@@ -60,7 +60,7 @@ function stopDaemon() {
   return true;
 }
 
-function daemonize(worktreeArgs) {
+async function daemonize(worktreeArgs) {
   const pid = readPid();
   if (pid && isRunning(pid)) {
     console.log(`firefox-review is already running (PID ${pid}).`);
@@ -75,9 +75,30 @@ function daemonize(worktreeArgs) {
   });
   child.unref();
   fs.writeFileSync(PID_FILE, String(child.pid));
-  console.log(`firefox-review started (PID ${child.pid}) — opening browser.`);
+
+  // Wait for daemon to write the port, then print the URL
+  const url = await waitForPort(2000);
+  if (url) {
+    console.log(`firefox-review running at ${url}`);
+  } else {
+    console.log('firefox-review started — opening browser.');
+  }
   console.log('Use "firefox-review --stop" to stop it.');
   process.exit(0);
+}
+
+function waitForPort(timeoutMs) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    function poll() {
+      if (!fs.existsSync(PID_FILE)) return resolve(null);
+      const content = fs.readFileSync(PID_FILE, 'utf8').trim().split(':');
+      if (content.length === 2) return resolve(`http://localhost:${content[1]}`);
+      if (Date.now() < deadline) setTimeout(poll, 50);
+      else resolve(null);
+    }
+    setTimeout(poll, 50);
+  });
 }
 
 async function main() {
@@ -132,7 +153,7 @@ async function main() {
     process.exit(1);
   }
 
-  startServer({ worktreeName, worktreePath, mainRepoPath });
+  startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: PID_FILE });
 }
 
 main();

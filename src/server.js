@@ -272,14 +272,15 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
 /**
  * Start the review web server.
  */
-async function startServer({ worktreeName, worktreePath, mainRepoPath }) {
+async function startServer({ worktreeName, worktreePath, mainRepoPath, pidFile }) {
   const app = createApp({ worktreeName, worktreePath, mainRepoPath });
   const port = await findAvailablePort(7777);
 
   app.listen(port, '127.0.0.1', () => {
     const url = `http://localhost:${port}`;
-    console.log(`\nfirefox-review server running at ${url}`);
-    console.log(`Reviewing ${worktreeName} — worktree: ${worktreePath}\n`);
+    if (pidFile) {
+      try { fs.writeFileSync(pidFile, `${process.pid}:${port}`); } catch {}
+    }
     openBrowser(url);
   });
 }

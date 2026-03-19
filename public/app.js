@@ -814,6 +814,71 @@ function switchPatch(idx) {
   updateSubmitButton();
 }
 
+// ── File navigation sidebar ─────────────────────────────────────────────────
+let fileNavScrollHandler = null;
+
+function renderFileNav(files, diffWrap) {
+  const nav = $('#file-nav');
+  if (fileNavScrollHandler) {
+    window.removeEventListener('scroll', fileNavScrollHandler, { passive: true });
+    fileNavScrollHandler = null;
+  }
+  if (!files || files.length === 0) {
+    nav.style.display = 'none';
+    return;
+  }
+
+  nav.innerHTML = '';
+  nav.style.display = 'block';
+  const topBarH = ($('#top-bar') || {}).offsetHeight || 0;
+  nav.style.top = topBarH + 'px';
+  nav.style.maxHeight = `calc(100vh - ${topBarH}px)`;
+
+  const blocks = Array.from(diffWrap.querySelectorAll('.file-block'));
+  const navItems = [];
+
+  files.forEach((fileData, idx) => {
+    const filePath = fileData.newPath || fileData.oldPath || '(unknown)';
+    const { added, removed } = countStats(fileData.hunks);
+    const name = filePath.split('/').pop();
+
+    const item = document.createElement('div');
+    item.className = 'file-nav-item';
+    item.title = filePath;
+    item.innerHTML = `<span class="file-nav-name">${escapeHtml(name)}</span><span class="file-nav-stats"><span class="stat-add">+${added}</span>&nbsp;<span class="stat-del">-${removed}</span></span>`;
+    item.addEventListener('click', () => {
+      const block = blocks[idx];
+      if (block) {
+        const y = block.getBoundingClientRect().top + window.scrollY - topBarH - 8;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      }
+    });
+    nav.appendChild(item);
+    navItems.push(item);
+  });
+
+  function updateActive() {
+    let activeIdx = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const rect = blocks[i].getBoundingClientRect();
+      if (rect.top <= topBarH + 32) activeIdx = i;
+    }
+    navItems.forEach((item, i) => item.classList.toggle('active', i === activeIdx));
+    const activeItem = navItems[activeIdx];
+    if (activeItem) {
+      const itemRect = activeItem.getBoundingClientRect();
+      const navRect = nav.getBoundingClientRect();
+      if (itemRect.top < navRect.top || itemRect.bottom > navRect.bottom) {
+        activeItem.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }
+
+  fileNavScrollHandler = updateActive;
+  window.addEventListener('scroll', fileNavScrollHandler, { passive: true });
+  updateActive();
+}
+
 function renderCurrentPatch() {
   const patch = currentPatch();
   const container = $('#files-changed');
@@ -821,6 +886,7 @@ function renderCurrentPatch() {
 
   if (!patch) {
     container.innerHTML = '<p style="color:#8b949e;padding:16px 24px;">No patches found.</p>';
+    renderFileNav([], null);
     return;
   }
 
@@ -1063,6 +1129,7 @@ function renderCurrentPatch() {
   }
 
   if (isCompareMode) {
+    renderFileNav([], null);
     const fromIdx = revList.findIndex((r) => r.hash === compareRev.from);
     const toIdx   = revList.findIndex((r) => r.hash === compareRev.to);
     const fromLabel = fromIdx >= 0 ? `Rev ${fromIdx + 1}` : compareRev.from;
@@ -1107,6 +1174,7 @@ function renderCurrentPatch() {
         placeholder.textContent = 'Failed to load comparison.';
       });
   } else if (effectiveHash !== patch.hash) {
+    renderFileNav([], null);
     const revIdx = revList.findIndex((r) => r.hash === effectiveHash);
     const revLabel = revIdx >= 0 ? `Rev ${revIdx + 1}` : 'Previous revision';
     const prevHeader = document.createElement('div');
@@ -1141,6 +1209,7 @@ function renderCurrentPatch() {
       });
   } else {
     if (patch.files.length === 0) {
+      renderFileNav([], null);
       const msg = document.createElement('p');
       msg.style.cssText = 'color:#8b949e;padding:8px 0;';
       msg.textContent = 'No changed files in this patch.';
@@ -1152,6 +1221,7 @@ function renderCurrentPatch() {
         diffWrap.appendChild(renderFile(fileData, patch.hash));
       }
       container.appendChild(diffWrap);
+      renderFileNav(patch.files, diffWrap);
     }
   }
 }

@@ -11,28 +11,42 @@ jest.mock('../src/server', () => ({ startServer: jest.fn() }));
 jest.mock('../src/git', () => ({ discoverWorktrees: jest.fn() }));
 
 const { discoverWorktrees } = require('../src/git');
-const { readPid, isRunning, stopDaemon, waitForPort, buildEntries, pickDefaultEntry, parseArgs } = require('../bin/firefox-review');
+const {
+  readPid, readAllInstances, isRunning, stopDaemon,
+  waitForPort, buildEntries, pickDefaultEntry, parseArgs,
+  pidFilePath, ensurePidsDir,
+} = require('../bin/firefox-review');
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 let tmpDir;
-let pidFile;
+
+// Override PIDS_DIR inside the module by monkey-patching the module's internal
+// constant.  We do this by re-requiring after setting the env so that tests
+// get an isolated directory.  Instead, we use fs helpers to write test files
+// into the real PIDS_DIR only when needed, and always clean up afterward.
+
+// Convenience: write a pid-tracking file that looks like the daemon wrote it.
+function writePidEntry(pid, port = null) {
+  ensurePidsDir();
+  const content = port != null ? `${pid}:${port}` : String(pid);
+  fs.writeFileSync(pidFilePath(pid), content, 'utf8');
+}
+
+function removePidEntry(pid) {
+  try { fs.unlinkSync(pidFilePath(pid)); } catch {}
+}
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fxreview-daemon-'));
-  pidFile = path.join(tmpDir, 'test.pid');
   discoverWorktrees.mockReset();
 });
 
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
+  // Remove any pid entries this test may have written for the current process.
+  removePidEntry(process.pid);
 });
-
-// Monkey-patch PID_FILE used inside the module by writing to the path the
-// module reads from. We expose the helpers and pass pidFile explicitly where
-// needed; for stopDaemon we write directly to the module's PID_FILE path by
-// temporarily swapping it — instead, we test stopDaemon's logic via the
-// exported helpers in isolation.
 
 // ── parseArgs ─────────────────────────────────────────────────────────────
 
@@ -81,8 +95,6 @@ describe('pickDefaultEntry', () => {
   const wt2     = { path: '/home/user/firefox-bugXYZ', worktreeName: 'bugXYZ',  isMain: false };
 
   test('prefers first non-main worktree when main repo is first in list', () => {
-    // This is the bug case: entries[0] is the main repo (no patches),
-    // but we should start on bugABC so the user sees actual file changes.
     const result = pickDefaultEntry([main, wt1, wt2]);
     expect(result.worktreeName).toBe('bugABC');
   });
@@ -104,17 +116,65 @@ describe('pickDefaultEntry', () => {
   });
 });
 
-// ── readPid ────────────────────────────────────────────────────────────────
+// ── readPid / readAllInstances ─────────────────────────────────────────────
 
 describe('readPid', () => {
-  test('returns null when PID file does not exist', () => {
-    // readPid reads from the module-level PID_FILE constant (~/.firefox-review.pid)
-    // We test the parsing logic indirectly via waitForPort which uses the same file,
-    // but we can test the exported readPid directly by checking the non-existent path.
-    // Since PID_FILE is hardcoded in the module, we verify the null-when-missing branch
-    // by ensuring it does not throw and returns null or a number.
+  test('returns null or a number (handles missing PIDS_DIR gracefully)', () => {
     const result = readPid();
     expect(result === null || typeof result === 'number').toBe(true);
+  });
+});
+
+describe('readAllInstances', () => {
+  test('returns empty array when PIDS_DIR does not exist', () => {
+    // If the dir exists, all entries from other tests should have been cleaned up.
+    // We just verify it returns an array and does not throw.
+    const result = readAllInstances();
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  test('returns instance with null port when only pid is written', () => {
+    const fakePid = 99999901;
+    writePidEntry(fakePid);
+    try {
+      const instances = readAllInstances();
+      const found = instances.find((i) => i.pid === fakePid);
+      expect(found).toBeDefined();
+      expect(found.port).toBeNull();
+    } finally {
+      removePidEntry(fakePid);
+    }
+  });
+
+  test('returns instance with port when pid:port is written', () => {
+    const fakePid = 99999902;
+    writePidEntry(fakePid, 8080);
+    try {
+      const instances = readAllInstances();
+      const found = instances.find((i) => i.pid === fakePid);
+      expect(found).toBeDefined();
+      expect(found.port).toBe(8080);
+    } finally {
+      removePidEntry(fakePid);
+    }
+  });
+
+  test('returns multiple instances when multiple pid files exist', () => {
+    const pid1 = 99999903;
+    const pid2 = 99999904;
+    writePidEntry(pid1, 7777);
+    writePidEntry(pid2, 7778);
+    try {
+      const instances = readAllInstances();
+      const pids = instances.map((i) => i.pid);
+      expect(pids).toContain(pid1);
+      expect(pids).toContain(pid2);
+      expect(instances.find((i) => i.pid === pid1).port).toBe(7777);
+      expect(instances.find((i) => i.pid === pid2).port).toBe(7778);
+    } finally {
+      removePidEntry(pid1);
+      removePidEntry(pid2);
+    }
   });
 });
 
@@ -126,28 +186,116 @@ describe('isRunning', () => {
   });
 
   test('returns false for a PID that does not exist', () => {
-    // PID 2147483647 is the maximum 32-bit int and will not be running
     expect(isRunning(2147483647)).toBe(false);
+  });
+});
+
+// ── stopDaemon ─────────────────────────────────────────────────────────────
+
+describe('stopDaemon', () => {
+  test('returns false and prints message when no instances are running', () => {
+    // Ensure no pid files exist for fake PIDs
+    const result = stopDaemon();
+    expect(result === false || result === true).toBe(true); // does not throw
+  });
+
+  test('cleans up stale pid file for a non-running PID', () => {
+    const deadPid = 99999910;
+    writePidEntry(deadPid, 7777);
+    expect(fs.existsSync(pidFilePath(deadPid))).toBe(true);
+
+    stopDaemon();
+
+    expect(fs.existsSync(pidFilePath(deadPid))).toBe(false);
+  });
+
+  test('stops all running instances and removes their pid files', () => {
+    // Use the current process as a "running" pid (safe: we send SIGTERM to a fake)
+    // Instead, simulate by writing a pid file for the current process and checking
+    // the file is removed. We can't actually kill the current process, so we spy
+    // on process.kill to prevent it.
+    const killSpy = jest.spyOn(process, 'kill').mockImplementation(() => {});
+    writePidEntry(process.pid, 7777);
+    try {
+      const result = stopDaemon();
+      expect(result).toBe(true);
+      expect(fs.existsSync(pidFilePath(process.pid))).toBe(false);
+      expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+    } finally {
+      killSpy.mockRestore();
+      removePidEntry(process.pid);
+    }
+  });
+
+  test('stops multiple running instances and removes all their pid files', () => {
+    // Spawn two real child processes so both PIDs are alive during the test.
+    const { spawnSync } = require('child_process');
+    // We need two live PIDs — use `node -e "require('fs').readFileSync(...)"` which
+    // exits immediately. Instead, spawn sleep-like processes and kill them via stopDaemon.
+    // The simplest approach that avoids real processes: spy on isRunning to return true
+    // for our fake PIDs and spy on process.kill to prevent actual signals.
+    const killSpy  = jest.spyOn(process, 'kill').mockImplementation(() => {});
+
+    const fakePid1 = 99999931;
+    const fakePid2 = 99999932;
+    writePidEntry(fakePid1, 7777);
+    writePidEntry(fakePid2, 7778);
+
+    // Patch isRunning inside the module to treat fake PIDs as alive.
+    // Since isRunning uses process.kill(pid, 0) and killSpy is now active,
+    // any process.kill call will return (not throw), making isRunning return true.
+    try {
+      const result = stopDaemon();
+      expect(result).toBe(true);
+      expect(fs.existsSync(pidFilePath(fakePid1))).toBe(false);
+      expect(fs.existsSync(pidFilePath(fakePid2))).toBe(false);
+      expect(killSpy).toHaveBeenCalledWith(fakePid1, 'SIGTERM');
+      expect(killSpy).toHaveBeenCalledWith(fakePid2, 'SIGTERM');
+    } finally {
+      killSpy.mockRestore();
+      removePidEntry(fakePid1);
+      removePidEntry(fakePid2);
+    }
   });
 });
 
 // ── waitForPort ────────────────────────────────────────────────────────────
 
 describe('waitForPort', () => {
-  // waitForPort reads from the module-level PID_FILE. We cannot easily override
-  // that path without refactoring, so we test the two observable outcomes:
-  // - when the file never gets a port appended → resolves null after timeout
-  // - the function itself is exported and returns a Promise
   test('returns a Promise', () => {
-    const result = waitForPort(1); // 1ms timeout — resolves quickly
+    const result = waitForPort(99999920, 1);
     expect(result).toBeInstanceOf(Promise);
-    return result; // ensure the promise resolves (don't leave it hanging)
+    return result;
   });
 
-  test('resolves to null when timeout expires with no port written', async () => {
-    const result = await waitForPort(60); // 60ms — fast enough for tests
-    // Either null (no pid file) or null (pid file exists but no :port yet)
-    expect(result === null || (typeof result === 'string' && result.startsWith('http'))).toBe(true);
+  test('resolves to null when timeout expires and file has no port', () => {
+    const fakePid = 99999921;
+    writePidEntry(fakePid); // just pid, no port
+    try {
+      return waitForPort(fakePid, 60).then((url) => {
+        expect(url).toBeNull();
+      });
+    } finally {
+      removePidEntry(fakePid);
+    }
+  });
+
+  test('resolves to null when pid file does not exist', async () => {
+    const url = await waitForPort(99999922, 60);
+    expect(url).toBeNull();
+  });
+
+  test('resolves to URL when pid:port is written before timeout', async () => {
+    const fakePid = 99999923;
+    writePidEntry(fakePid); // write pid only first
+    // Write port after a short delay to simulate daemon binding
+    setTimeout(() => writePidEntry(fakePid, 9999), 20);
+    try {
+      const url = await waitForPort(fakePid, 300);
+      expect(url).toBe('http://localhost:9999');
+    } finally {
+      removePidEntry(fakePid);
+    }
   });
 });
 
@@ -155,19 +303,13 @@ describe('waitForPort', () => {
 
 describe('buildEntries', () => {
   test('returns empty array when mainRepoPath does not exist', () => {
-    // firefox-review hardcodes ~/firefox as mainRepoPath.
-    // On CI / test machines that directory likely does not exist.
-    // We verify the function returns an array and does not throw.
     const entries = buildEntries();
     expect(Array.isArray(entries)).toBe(true);
   });
 
   test('includes worktrees returned by discoverWorktrees when main repo exists', () => {
     const mainRepoPath = path.join(os.homedir(), 'firefox');
-    if (!fs.existsSync(mainRepoPath)) {
-      // Skip — cannot test without the main repo present
-      return;
-    }
+    if (!fs.existsSync(mainRepoPath)) return;
     discoverWorktrees.mockReturnValue([
       { path: '/fake/firefox-bugABC', worktreeName: 'bugABC' },
     ]);

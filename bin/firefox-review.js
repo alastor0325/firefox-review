@@ -9,7 +9,45 @@ const { startServer } = require('../src/server');
 const { discoverWorktrees } = require('../src/git');
 
 const mainRepoPath = path.join(os.homedir(), 'firefox');
-const PID_FILE = path.join(os.homedir(), '.firefox-review.pid');
+const PIDS_DIR = path.join(os.homedir(), '.firefox-review.pids');
+// Legacy single-instance PID file — cleaned up on first use.
+const LEGACY_PID_FILE = path.join(os.homedir(), '.firefox-review.pid');
+
+function ensurePidsDir() {
+  if (!fs.existsSync(PIDS_DIR)) fs.mkdirSync(PIDS_DIR, { recursive: true });
+}
+
+function pidFilePath(pid) {
+  return path.join(PIDS_DIR, String(pid));
+}
+
+/**
+ * Returns all tracked instances as { pid, port, filePath }.
+ * port is null if the daemon hasn't written it yet.
+ */
+function readAllInstances() {
+  if (!fs.existsSync(PIDS_DIR)) return [];
+  const results = [];
+  for (const name of fs.readdirSync(PIDS_DIR)) {
+    const pid = parseInt(name, 10);
+    if (isNaN(pid)) continue;
+    const filePath = path.join(PIDS_DIR, name);
+    try {
+      const parts = fs.readFileSync(filePath, 'utf8').trim().split(':');
+      const port = parts.length === 2 ? parseInt(parts[1], 10) : null;
+      results.push({ pid, port: !isNaN(port) ? port : null, filePath });
+    } catch {
+      // ignore unreadable files
+    }
+  }
+  return results;
+}
+
+/** Backward-compatible: returns the first tracked PID, or null. */
+function readPid() {
+  const all = readAllInstances();
+  return all.length > 0 ? all[0].pid : null;
+}
 
 function buildEntries() {
   const entries = [];
@@ -46,36 +84,39 @@ function isRunning(pid) {
   }
 }
 
-function readPid() {
-  if (!fs.existsSync(PID_FILE)) return null;
-  const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').split(':')[0], 10);
-  return isNaN(pid) ? null : pid;
-}
-
+/**
+ * Stop all running instances. Returns true if at least one was stopped.
+ */
 function stopDaemon() {
-  const pid = readPid();
-  if (!pid) {
+  // Migrate legacy single PID file on first use.
+  if (fs.existsSync(LEGACY_PID_FILE)) {
+    try { fs.unlinkSync(LEGACY_PID_FILE); } catch {}
+  }
+
+  const instances = readAllInstances();
+  const running = instances.filter((i) => isRunning(i.pid));
+  const stale   = instances.filter((i) => !isRunning(i.pid));
+
+  for (const inst of stale) {
+    try { fs.unlinkSync(inst.filePath); } catch {}
+  }
+
+  if (running.length === 0) {
     console.log('No running firefox-review instance found.');
     return false;
   }
-  if (!isRunning(pid)) {
-    fs.unlinkSync(PID_FILE);
-    console.log('Cleaned up stale PID file (process was not running).');
-    return false;
+
+  for (const inst of running) {
+    process.kill(inst.pid, 'SIGTERM');
+    try { fs.unlinkSync(inst.filePath); } catch {}
+    const portStr = inst.port ? `, port ${inst.port}` : '';
+    console.log(`Stopped firefox-review (PID ${inst.pid}${portStr}).`);
   }
-  process.kill(pid, 'SIGTERM');
-  fs.unlinkSync(PID_FILE);
-  console.log(`Stopped firefox-review (PID ${pid}).`);
   return true;
 }
 
 async function daemonize(worktreeArgs) {
-  const pid = readPid();
-  if (pid && isRunning(pid)) {
-    console.log(`firefox-review is already running (PID ${pid}).`);
-    console.log('Use --restart to restart it, or --stop to stop it.');
-    process.exit(0);
-  }
+  ensurePidsDir();
 
   const child = spawn(process.execPath, [__filename, ...worktreeArgs], {
     detached: true,
@@ -83,10 +124,10 @@ async function daemonize(worktreeArgs) {
     env: { ...process.env, FIREFOX_REVIEW_DAEMON: '1' },
   });
   child.unref();
-  fs.writeFileSync(PID_FILE, String(child.pid));
+  fs.writeFileSync(pidFilePath(child.pid), String(child.pid));
 
-  // Wait for daemon to write the port, then print the URL
-  const url = await waitForPort(2000);
+  // Wait for daemon to write pid:port, then print the URL
+  const url = await waitForPort(child.pid, 2000);
   if (url) {
     console.log(`firefox-review running at ${url}`);
   } else {
@@ -96,12 +137,13 @@ async function daemonize(worktreeArgs) {
   process.exit(0);
 }
 
-function waitForPort(timeoutMs) {
+function waitForPort(pid, timeoutMs) {
   return new Promise((resolve) => {
+    const file = pidFilePath(pid);
     const deadline = Date.now() + timeoutMs;
     function poll() {
-      if (!fs.existsSync(PID_FILE)) return resolve(null);
-      const content = fs.readFileSync(PID_FILE, 'utf8').trim().split(':');
+      if (!fs.existsSync(file)) return resolve(null);
+      const content = fs.readFileSync(file, 'utf8').trim().split(':');
       if (content.length === 2) return resolve(`http://localhost:${content[1]}`);
       if (Date.now() < deadline) setTimeout(poll, 50);
       else resolve(null);
@@ -112,7 +154,7 @@ function waitForPort(timeoutMs) {
 
 /**
  * Parse CLI args, extracting --port and the optional worktree name.
- * Returns { worktreeArg, port, rest } where rest is the remaining args
+ * Returns { port, rest } where rest is the remaining args
  * with --port and its value removed (for forwarding to the daemon).
  */
 function parseArgs(args) {
@@ -139,7 +181,7 @@ async function main() {
 
   if (flag === '--restart') {
     stopDaemon();
-    // Brief pause to let the port free up
+    // Brief pause to let the ports free up
     await new Promise((r) => setTimeout(r, 500));
     daemonize(rawArgs.slice(1)); // forward all args (including --port) to new daemon
     return;
@@ -153,8 +195,9 @@ async function main() {
 
   // --- Running as daemon from here ---
 
-  // Clean up PID file on exit
-  process.on('exit', () => { try { fs.unlinkSync(PID_FILE); } catch {} });
+  // Clean up this instance's PID file on exit
+  const myPidFile = pidFilePath(process.pid);
+  process.on('exit', () => { try { fs.unlinkSync(myPidFile); } catch {} });
   process.on('SIGTERM', () => process.exit(0));
 
   const { port, rest: positional } = parseArgs(rawArgs);
@@ -181,11 +224,11 @@ async function main() {
     process.exit(1);
   }
 
-  startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: PID_FILE, ...(port && { port }) });
+  startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: myPidFile, ...(port && { port }) });
 }
 
 if (require.main === module) {
   main();
 }
 
-module.exports = { readPid, isRunning, stopDaemon, waitForPort, buildEntries, pickDefaultEntry, parseArgs };
+module.exports = { readPid, readAllInstances, isRunning, stopDaemon, waitForPort, buildEntries, pickDefaultEntry, parseArgs, pidFilePath, ensurePidsDir };

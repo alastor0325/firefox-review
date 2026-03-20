@@ -594,10 +594,12 @@ function renderFile(fileData, patchHash) {
   header.className = 'file-header';
   header.innerHTML = `
     <span class="file-toggle">▼</span>
-    <span class="file-path">${escapeHtml(filePath)}</span>
-    <span class="file-stats">
-      <span class="stat-add">+${added}</span>
-      <span class="stat-del">-${removed}</span>
+    <span class="file-header-content">
+      <span class="file-path">${escapeHtml(filePath)}</span>
+      <span class="file-stats">
+        <span class="stat-add">+${added}</span>
+        <span class="stat-del">-${removed}</span>
+      </span>
     </span>`;
   block.appendChild(header);
 
@@ -878,11 +880,6 @@ function buildNavItemsEl(files, diffWrap) {
     filenameSpan.className = 'file-nav-filename';
     filenameSpan.textContent = filename;
     filenameRow.appendChild(filenameSpan);
-
-    const statsSpan = document.createElement('span');
-    statsSpan.className = 'file-nav-stats';
-    statsSpan.innerHTML = `<span class="stat-add">+${added}</span>&nbsp;<span class="stat-del">-${removed}</span>`;
-    filenameRow.appendChild(statsSpan);
     item.appendChild(filenameRow);
 
     if (dirPath) {
@@ -891,6 +888,11 @@ function buildNavItemsEl(files, diffWrap) {
       dirSpan.textContent = dirPath;
       item.appendChild(dirSpan);
     }
+
+    const statsSpan = document.createElement('div');
+    statsSpan.className = 'file-nav-stats';
+    statsSpan.innerHTML = `<span class="stat-add">+${added}</span><span class="stat-del">-${removed}</span>`;
+    item.appendChild(statsSpan);
 
     // Click handler reads getBoundingClientRect at click time (element is visible then)
     item.addEventListener('click', () => {

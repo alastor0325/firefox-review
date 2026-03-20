@@ -16,6 +16,10 @@ const state = {
   compareRevision: {},  // { patchIdx: { from: hash, to: hash } | absent } — compare mode
 };
 
+// Pre-rendered patch elements. Each entry: { el, diffWrap }.
+// All are kept in #files-changed; only the active one is visible (display:'').
+const patchEls = [];
+
 // ── DOM helpers ────────────────────────────────────────────────────────────
 function $(sel, root) { return (root || document).querySelector(sel); }
 function $$(sel, root) { return [...(root || document).querySelectorAll(sel)]; }
@@ -812,10 +816,16 @@ function renderTabs() {
 
 function switchPatch(idx) {
   removeExistingForm();
+  if (patchEls[state.currentPatchIdx]) patchEls[state.currentPatchIdx].el.style.display = 'none';
   state.currentPatchIdx = idx;
-  renderCurrentPatch();
+  const entry = patchEls[idx];
+  if (entry) {
+    entry.el.style.display = '';
+    renderFileNav(state.patches[idx]?.files || [], entry.diffWrap);
+  }
   renderTabs();
   updateSubmitButton();
+  window.scrollTo(0, 0);
 }
 
 // ── File navigation sidebar ─────────────────────────────────────────────────
@@ -942,27 +952,26 @@ function renderFileNav(files, diffWrap) {
   updateActive();
 }
 
-function renderCurrentPatch() {
-  const patch = currentPatch();
-  const container = $('#files-changed');
-
-  // Build all synchronous content into a fragment first, then swap atomically
-  // to avoid the flicker caused by container briefly going empty.
-  const frag = document.createDocumentFragment();
+// ── Build a patch element (detached) ────────────────────────────────────────
+// Returns { el, diffWrap } for the given patch index. The element is not yet
+// inserted into the DOM; the caller is responsible for placement and calling
+// renderFileNav after the element is in the DOM.
+function buildPatchEl(idx) {
+  const patch = state.patches[idx];
+  const el = document.createElement('div');
+  let diffWrap = null;
 
   if (!patch) {
     const p = document.createElement('p');
     p.style.cssText = 'color:#8b949e;padding:16px 24px;';
     p.textContent = 'No patches found.';
-    frag.appendChild(p);
-    container.replaceChildren(frag);
-    renderFileNav([], null);
-    return;
+    el.appendChild(p);
+    return { el, diffWrap };
   }
 
   const isApproved = state.approved.has(patch.hash);
   const isDenied = state.denied.has(patch.hash);
-  const patchNum = state.currentPatchIdx + 1;
+  const patchNum = idx + 1;
   const total = state.patches.length;
 
   // Patch heading row
@@ -1004,11 +1013,11 @@ function renderCurrentPatch() {
   btnGroup.appendChild(approveBtn);
   btnGroup.appendChild(denyBtn);
   heading.appendChild(btnGroup);
-  frag.appendChild(heading);
+  el.appendChild(heading);
 
   // Revision toggle bar — shown when this patch has multiple recorded revisions
-  const revList = getRevisionList(state.currentPatchIdx);
-  const patchIdx = state.currentPatchIdx;
+  const revList = getRevisionList(idx);
+  const patchIdx = idx;
   const compareRev = state.compareRevision[patchIdx] ?? null;
   const isCompareMode = compareRev !== null;
   const selectedHash = state.showRevision[patchIdx] ?? null;
@@ -1075,8 +1084,8 @@ function renderCurrentPatch() {
         renderCurrentPatch();
       });
 
-      frag.appendChild(fromBar);
-      frag.appendChild(toBar);
+      el.appendChild(fromBar);
+      el.appendChild(toBar);
     } else {
       const compareBtn = document.createElement('button');
       compareBtn.className = 'btn-compare-toggle';
@@ -1093,12 +1102,12 @@ function renderCurrentPatch() {
         renderTabs();
       });
       revBar._scroll.appendChild(compareBtn);
-      frag.appendChild(revBar);
+      el.appendChild(revBar);
     }
   }
 
   // Commit message section — always shown, disabled when approved
-  renderCommitMessageSection(frag, patch.hash, patch.body || patch.message, isApproved);
+  renderCommitMessageSection(el, patch.hash, patch.body || patch.message, isApproved);
 
   // General comment box (always shown so user can read it even when skipped/approved)
   const generalBox = document.createElement('div');
@@ -1109,7 +1118,7 @@ function renderCurrentPatch() {
       <span class="general-comment-hint">Feedback here is scoped to this patch only. Use this for overall concerns not tied to a specific line.</span>
     </div>
     <textarea class="general-comment-textarea" placeholder="e.g. This approach should use RAII. Please refactor the error handling throughout this patch…">${escapeHtml(getGeneralComment(patch.hash))}</textarea>`;
-  frag.appendChild(generalBox);
+  el.appendChild(generalBox);
 
   const textarea = generalBox.querySelector('textarea');
   if (isApproved) textarea.disabled = true;
@@ -1175,7 +1184,7 @@ function renderCurrentPatch() {
     }
 
     summaryBox.appendChild(summaryList);
-    frag.appendChild(summaryBox);
+    el.appendChild(summaryBox);
   }
 
   // Deny notice — show below general comment box but before diff
@@ -1185,7 +1194,7 @@ function renderCurrentPatch() {
     denyNotice.innerHTML = `
       <span class="deny-notice-icon">✗</span>
       <span>This patch was denied — it requires significant changes. Add comments above to explain.</span>`;
-    frag.appendChild(denyNotice);
+    el.appendChild(denyNotice);
   }
 
   // Approved notice — shown above the diff (diff still visible but read-only)
@@ -1195,7 +1204,7 @@ function renderCurrentPatch() {
     notice.innerHTML = `
       <span class="approve-notice-icon">✓</span>
       <span>This patch was approved — no issues found. Click <strong>Approved ✓</strong> to undo.</span>`;
-    frag.appendChild(notice);
+    el.appendChild(notice);
   }
 
   if (isCompareMode) {
@@ -1207,15 +1216,12 @@ function renderCurrentPatch() {
     const compareHeader = document.createElement('div');
     compareHeader.className = 'diff-revision-header diff-revision-compare';
     compareHeader.textContent = `Comparing ${fromLabel} → ${toLabel}`;
-    frag.appendChild(compareHeader);
+    el.appendChild(compareHeader);
 
     const placeholder = document.createElement('div');
     placeholder.className = 'diff-revision-loading';
     placeholder.textContent = 'Loading comparison…';
-    frag.appendChild(placeholder);
-
-    container.replaceChildren(frag);
-    renderFileNav([], null);
+    el.appendChild(placeholder);
 
     fetch(`/api/revdiff?from=${compareRev.from}&to=${compareRev.to}`)
       .then((r) => r.json())
@@ -1225,14 +1231,14 @@ function renderCurrentPatch() {
           const err = document.createElement('p');
           err.style.cssText = 'color:#f85149;padding:8px 24px;';
           err.textContent = `Could not load comparison: ${data.error}`;
-          container.appendChild(err);
+          el.appendChild(err);
           return;
         }
         if ((data.files || []).length === 0) {
           const msg = document.createElement('p');
           msg.style.cssText = 'color:#8b949e;padding:16px 24px;';
           msg.textContent = 'No differences between these revisions.';
-          container.appendChild(msg);
+          el.appendChild(msg);
           return;
         }
         const wrap = document.createElement('div');
@@ -1240,7 +1246,7 @@ function renderCurrentPatch() {
         for (const fileData of data.files) {
           wrap.appendChild(renderFile(fileData, `compare:${compareRev.from}:${compareRev.to}`));
         }
-        container.appendChild(wrap);
+        el.appendChild(wrap);
       })
       .catch(() => {
         placeholder.textContent = 'Failed to load comparison.';
@@ -1251,15 +1257,12 @@ function renderCurrentPatch() {
     const prevHeader = document.createElement('div');
     prevHeader.className = 'diff-revision-header diff-revision-previous';
     prevHeader.textContent = `${revLabel} — ${effectiveHash}`;
-    frag.appendChild(prevHeader);
+    el.appendChild(prevHeader);
 
     const placeholder = document.createElement('div');
     placeholder.className = 'diff-revision-loading';
     placeholder.textContent = 'Loading revision…';
-    frag.appendChild(placeholder);
-
-    container.replaceChildren(frag);
-    renderFileNav([], null);
+    el.appendChild(placeholder);
 
     fetch(`/api/patchdiff/${effectiveHash}`)
       .then((r) => r.json())
@@ -1269,13 +1272,13 @@ function renderCurrentPatch() {
           const err = document.createElement('p');
           err.style.cssText = 'color:#f85149;padding:8px 24px;';
           err.textContent = `Could not load revision: ${data.error}`;
-          container.appendChild(err);
+          el.appendChild(err);
           return;
         }
         for (const fileData of (data.files || [])) {
           const block = renderFile(fileData, effectiveHash);
           block.classList.add('diff-previous-revision');
-          container.appendChild(block);
+          el.appendChild(block);
         }
       })
       .catch(() => {
@@ -1286,20 +1289,49 @@ function renderCurrentPatch() {
       const msg = document.createElement('p');
       msg.style.cssText = 'color:#8b949e;padding:8px 0;';
       msg.textContent = 'No changed files in this patch.';
-      frag.appendChild(msg);
-      container.replaceChildren(frag);
-      renderFileNav([], null);
+      el.appendChild(msg);
     } else {
-      const diffWrap = document.createElement('div');
+      diffWrap = document.createElement('div');
       if (isApproved) diffWrap.className = 'diff-approved-readonly';
       for (const fileData of patch.files) {
         diffWrap.appendChild(renderFile(fileData, patch.hash));
       }
-      frag.appendChild(diffWrap);
-      container.replaceChildren(frag);
-      renderFileNav(patch.files, diffWrap);
+      el.appendChild(diffWrap);
     }
   }
+
+  return { el, diffWrap };
+}
+
+// Re-render the current patch in-place (called when approve/deny/comment state changes).
+function renderCurrentPatch() {
+  const idx = state.currentPatchIdx;
+  const { el, diffWrap } = buildPatchEl(idx);
+  const existing = patchEls[idx];
+  patchEls[idx] = { el, diffWrap };
+  if (existing) {
+    existing.el.replaceWith(el);
+  } else {
+    $('#files-changed').appendChild(el);
+  }
+  renderFileNav(state.patches[idx]?.files || [], diffWrap);
+}
+
+// Build all patch elements and insert them into #files-changed.
+// Called once after the initial diff load; tab switches use show/hide after this.
+function initPatchNodes() {
+  const container = $('#files-changed');
+  patchEls.length = 0;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < state.patches.length; i++) {
+    const { el, diffWrap } = buildPatchEl(i);
+    el.style.display = i === state.currentPatchIdx ? '' : 'none';
+    patchEls.push({ el, diffWrap });
+    frag.appendChild(el);
+  }
+  container.replaceChildren(frag);
+  const cur = patchEls[state.currentPatchIdx];
+  renderFileNav(state.patches[state.currentPatchIdx]?.files || [], cur?.diffWrap || null);
 }
 
 // ── Submit review ──────────────────────────────────────────────────────────
@@ -1486,7 +1518,7 @@ async function init() {
 
     detectRevisionChanges();
     renderTabs();
-    renderCurrentPatch();
+    initPatchNodes();
     updateSubmitButton();
     refreshPromptBar();
   } catch (err) {
@@ -1536,6 +1568,10 @@ if (typeof module !== 'undefined') {
     setFileNavCollapsed: (v) => { fileNavCollapsed = v; },
     submitReview,
     renderCommitMessageSection,
+    buildPatchEl,
+    initPatchNodes,
+    switchPatch,
+    patchEls,
     init,
   };
 }

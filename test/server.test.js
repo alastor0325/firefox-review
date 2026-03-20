@@ -87,6 +87,7 @@ describe('GET /api/diff', () => {
     const app = makeApp();
     const res = await request(app).get('/api/diff');
     expect(res.status).toBe(200);
+    expect(res.body.repoName).toBe('firefox');
     expect(res.body.worktreeName).toBe('bugABC');
     expect(res.body.worktreePath).toBe('/fake/worktree');
     expect(res.body.patches).toHaveLength(2);

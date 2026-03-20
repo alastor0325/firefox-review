@@ -1464,6 +1464,7 @@ async function init() {
 
     $('#bug-id-display').textContent = data.worktreeName;
     $('#worktree-path').textContent = data.worktreePath;
+    if (data.repoName) document.title = `${data.repoName}-${data.worktreeName}`;
 
     loading.style.display = 'none';
     filesChanged.style.display = '';
@@ -1520,6 +1521,7 @@ if (typeof module !== 'undefined') {
     setFileNavCollapsed: (v) => { fileNavCollapsed = v; },
     submitReview,
     renderCommitMessageSection,
+    init,
   };
 }
 

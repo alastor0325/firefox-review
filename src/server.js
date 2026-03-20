@@ -81,6 +81,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
     try {
       loadData();
       res.json({
+        repoName: path.basename(mainRepoPath),
         worktreeName,
         worktreePath,
         patches: patchesCache,

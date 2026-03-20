@@ -6,7 +6,7 @@
 global.fetch = jest.fn();
 global.EventSource = jest.fn(() => ({ addEventListener: jest.fn(), close: jest.fn() }));
 
-const { loadAndRender } = require('../public/app');
+const { loadAndRender, init } = require('../public/app');
 
 function setupDOM() {
   document.body.innerHTML = `
@@ -85,5 +85,33 @@ describe('document.title — page title reflects repo and worktree', () => {
     mockFetch({ repoName: 'myrepo', worktreeName: 'feat-B', worktreePath: '/Users/dev/myrepo-feat-B', patches: [] });
     await loadAndRender();
     expect(document.title).toBe('myrepo-feat-B');
+  });
+});
+
+describe('#btn-reload-page — codebase update banner', () => {
+  beforeEach(() => {
+    setupDOM();
+    jest.clearAllMocks();
+    global.navigator.clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+  });
+
+  test('clicking reload button hides the banner and re-renders content', async () => {
+    mockFetch({ repoName: 'firefox', worktreeName: 'bug-111', worktreePath: '/dev/firefox-bug-111', patches: [] });
+    await init();
+
+    // Simulate a new commit detected: banner becomes visible
+    const banner = document.getElementById('update-banner');
+    banner.style.display = '';
+
+    // Fresh diff data for the reload
+    mockFetch({ repoName: 'firefox', worktreeName: 'bug-111', worktreePath: '/dev/firefox-bug-111', patches: [] });
+    document.getElementById('btn-reload-page').click();
+    // Allow async click handler to complete
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(banner.style.display).toBe('none');
+    // loadAndRender fetches /api/diff again — verify it was called
+    const diffCalls = global.fetch.mock.calls.filter(([url]) => url === '/api/diff');
+    expect(diffCalls.length).toBeGreaterThanOrEqual(2);
   });
 });

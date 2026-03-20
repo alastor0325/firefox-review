@@ -1590,6 +1590,11 @@ async function init() {
     }
   });
 
+  $('#btn-reload-page').addEventListener('click', async () => {
+    $('#update-banner').style.display = 'none';
+    await loadAndRender();
+  });
+
   initWorktreeBar(); // fire-and-forget — bar loads independently
   await loadAndRender();
 }
@@ -1623,10 +1628,6 @@ async function startUpdatePolling() {
 document.addEventListener('DOMContentLoaded', () => {
   init();
   startUpdatePolling();
-  $('#btn-reload-page').addEventListener('click', async () => {
-    $('#update-banner').style.display = 'none';
-    await loadAndRender();
-  });
 });
 
 // Allow unit tests to import pure helpers without loading the full browser app.

@@ -1598,11 +1598,11 @@ async function init() {
 // Polls /api/headhash every 5 seconds; shows a reload banner when the
 // worktree HEAD changes (i.e. commits were amended or added).
 async function startUpdatePolling() {
-  let initialHash = null;
+  let knownHash = null;
   try {
     const res = await fetch('/api/headhash');
     if (!res.ok) return;
-    ({ hash: initialHash } = await res.json());
+    ({ hash: knownHash } = await res.json());
   } catch {
     return; // endpoint unavailable (e.g. demo mode) — silently skip
   }
@@ -1612,7 +1612,8 @@ async function startUpdatePolling() {
       const res = await fetch('/api/headhash');
       if (!res.ok) return;
       const { hash } = await res.json();
-      if (hash !== initialHash) {
+      if (hash !== knownHash) {
+        knownHash = hash;
         $('#update-banner').style.display = '';
       }
     } catch { /* ignore network errors */ }
@@ -1622,7 +1623,10 @@ async function startUpdatePolling() {
 document.addEventListener('DOMContentLoaded', () => {
   init();
   startUpdatePolling();
-  $('#btn-reload-page').addEventListener('click', () => location.reload());
+  $('#btn-reload-page').addEventListener('click', async () => {
+    $('#update-banner').style.display = 'none';
+    await loadAndRender();
+  });
 });
 
 // Allow unit tests to import pure helpers without loading the full browser app.

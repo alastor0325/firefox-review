@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Revue — interactive demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../public/style.css" />
   <style>
     #demo-banner {
@@ -41,7 +43,7 @@
     <!-- ── Header ── -->
     <div id="header">
       <div id="header-left">
-        <h1>Revue · <span id="bug-id-display"></span></h1>
+        <h1><a href="https://github.com/alastor0325/revue" target="_blank" class="app-name">Revue</a> · <span id="bug-id-display"></span></h1>
         <div id="worktree-path"></div>
       </div>
       <div id="submit-area">
@@ -70,8 +72,11 @@
   <div id="loading">Loading diff…</div>
   <div id="error-msg" style="display:none;"></div>
 
-  <!-- ── Files changed ── -->
-  <div id="files-changed" style="display:none;"></div>
+  <!-- ── Main layout: file nav sidebar + diff content ── -->
+  <div id="main-layout">
+    <nav id="file-nav" style="display:none;"></nav>
+    <div id="files-changed" style="display:none;"></div>
+  </div>
 
   <!-- ── Result overlay ── -->
   <div id="result-overlay">

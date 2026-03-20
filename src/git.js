@@ -384,7 +384,7 @@ function getDiffPerCommit(worktreePath, mainRepoPath) {
  * @returns {Array<{ path: string, branch: string|null, worktreeName: string }>}
  */
 function parseWorktreeList(output, mainRepoPath) {
-  const mainBasename = path.basename(mainRepoPath);
+  const mainBasename = path.basename(mainRepoPath.replace(/\\/g, '/'));
   const prefix = mainBasename + '-';
   const blocks = output.trim().split(/\n\n+/);
   return blocks
@@ -400,7 +400,10 @@ function parseWorktreeList(output, mainRepoPath) {
       return { path: wtPath, branch };
     })
     .filter(Boolean)
-    .filter((wt) => path.normalize(wt.path) !== path.normalize(mainRepoPath))
+    .filter((wt) => {
+      const norm = (p) => path.normalize(p).replace(/\\/g, '/');
+      return norm(wt.path) !== norm(mainRepoPath);
+    })
     .map((wt) => {
       const basename = path.basename(wt.path);
       const worktreeName = basename.startsWith(prefix) ? basename.slice(prefix.length) : basename;

@@ -793,6 +793,7 @@ function renderTabs() {
     const frag = document.createDocumentFragment();
     state.patches.forEach((patch, idx) => {
       const tab = document.createElement('button');
+      tab.className = 'patch-tab';
       tab.addEventListener('click', () => switchPatch(idx));
       frag.appendChild(tab);
     });

@@ -68,6 +68,14 @@ The server defaults to port `7777` and increments automatically if that port is 
 
 ## Reviewing
 
+### Page title
+
+The browser tab title is set to `repoName-worktreeName` (e.g. `firefox-bug-1234567`) and updates immediately when you switch worktrees.
+
+### File navigation sidebar
+
+A sidebar on the left lists all changed files in the current patch, with `+`/`-` counts per file. Click any entry to jump to that file's diff. The sidebar highlights the file currently in view as you scroll, and can be collapsed with the `◀` toggle.
+
 ### Per-patch tabs
 
 When a worktree has multiple commits the UI shows **tabs** — one per patch:
@@ -212,6 +220,11 @@ Tests cover:
 - `parseWorktreeList` — worktree discovery parsing (including generic prefix stripping)
 - `formatCombinedPrompt` / `submitReview` — combined prompt structure, approved/skipped markers, commit message feedback, multi-patch feedback
 - Express routes — all API endpoints with mocked git and claude modules
+- `renderFile` — diff table structure, line rows, stats, HTML escaping, collapse toggle, expand context rows
+- `renderFileNav` — sidebar items, collapse/expand, file/dir hierarchy, stats layout
+- `buildPatchEl` / `initPatchNodes` / `switchPatch` / `renderTabs` — patch pre-rendering and tab switching
+- `loadAndRender` / `init` — page title, reload banner behaviour
+- Comment forms — draft persistence, inline comment display, click-to-comment vs text selection
 
 ## License
 

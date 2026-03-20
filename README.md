@@ -1,6 +1,6 @@
 # Revue
 
-A local web UI for reviewing patches in git worktrees.
+A local web UI for reviewing Git patch series and iterating on them with Claude — browse diffs, leave inline comments, and generate a structured review prompt in one click.
 
 **[→ Interactive demo](https://alastor0325.github.io/revue/docs/)**
 
@@ -15,12 +15,6 @@ A local web UI for reviewing patches in git worktrees.
 7. **Repeat** until all patches are approved.
 
 If you're running Claude on several worktrees in parallel, switch between them from the tab bar at the top — no restart needed.
-
-## The problem
-
-When you use Claude Code to implement changes, the patches land in a dedicated git worktree. Reviewing those changes and sending structured feedback back to Claude is awkward — there's no clean way to annotate specific lines and hand the feedback off without manual copy-pasting.
-
-`Revue` solves this with a GitHub-style diff viewer that runs locally, lets you leave inline comments per patch, and generates a structured prompt you can paste directly into Claude.
 
 ## Setup
 

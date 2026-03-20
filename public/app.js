@@ -594,12 +594,10 @@ function renderFile(fileData, patchHash) {
   header.className = 'file-header';
   header.innerHTML = `
     <span class="file-toggle">▼</span>
-    <span class="file-header-content">
-      <span class="file-path">${escapeHtml(filePath)}</span>
-      <span class="file-stats">
-        <span class="stat-add">+${added}</span>
-        <span class="stat-del">-${removed}</span>
-      </span>
+    <span class="file-path">${escapeHtml(filePath)}</span>
+    <span class="file-stats">
+      <span class="stat-add">+${added}</span>
+      <span class="stat-del">-${removed}</span>
     </span>`;
   block.appendChild(header);
 

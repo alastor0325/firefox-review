@@ -697,19 +697,9 @@ body {
   font-size: 11px;
   flex: 0 0 auto;
   transition: transform 0.15s;
-  align-self: flex-start;
-  margin-top: 2px;
 }
 
 .file-toggle.collapsed { transform: rotate(-90deg); }
-
-.file-header-content {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1;
-  min-width: 0;
-}
 
 .file-path {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -717,13 +707,16 @@ body {
   color: #e6edf3;
   word-break: break-all;
   user-select: text;
+  flex: 1;
+  min-width: 0;
 }
 
 .file-stats {
+  margin-left: auto;
   display: flex;
   gap: 6px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 12px;
+  flex: 0 0 auto;
 }
 
 .stat-add { color: #3fb950; font-weight: 600; }

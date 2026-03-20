@@ -4,12 +4,17 @@ A local web UI for reviewing patches in git worktrees.
 
 **[→ Interactive demo](https://alastor0325.github.io/revue/docs/)**
 
-## Use cases
+## Typical workflow
 
-- **Reviewing Claude-generated patches** — Claude Code lands changes in a git worktree. Open Revue, browse the diffs, annotate specific lines, then click **Generate Review Prompt** to send structured feedback straight back to Claude — no manual copy-pasting.
-- **Iterating quickly** — after Claude amends the patches, Revue detects the changes and shows a reload banner. One click reloads the new diffs while preserving your existing comments on unchanged lines.
-- **Multi-commit patch series** — when a feature spans several commits, each patch gets its own tab with approve/deny controls. You can review them independently and generate one consolidated prompt covering all of them.
-- **Parallel worktrees** — if you're running Claude on multiple worktrees at once, switch between them instantly from the tab bar at the top of the page without restarting anything.
+1. **Ask Claude Code to implement something** in a worktree, e.g. `revue my-feature`.
+2. **Open Revue** — `revue my-feature` starts the server and opens the browser automatically.
+3. **Browse the diffs** — each commit is a tab. Click any diff line to leave an inline comment, or use the General feedback box for broader concerns. Approve patches that look good, deny ones that need rework.
+4. **Click Generate Review Prompt** — Revue writes a structured markdown file and copies the prompt to your clipboard.
+5. **Paste into Claude** — Claude reads the per-line feedback, amends the relevant commits, and reports back.
+6. **Revue detects the changes** — a banner appears when the worktree HEAD moves. Click reload to pull in the new diffs without losing your session.
+7. **Repeat** until all patches are approved.
+
+If you're running Claude on several worktrees in parallel, switch between them from the tab bar at the top — no restart needed.
 
 ## The problem
 

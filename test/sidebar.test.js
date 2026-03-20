@@ -226,6 +226,15 @@ describe('renderFileNav — sidebar collapse', () => {
     expect(document.querySelector('.file-nav-toggle').textContent).toBe('▶');
     expect(document.getElementById('file-nav').classList.contains('collapsed')).toBe(true);
   });
+
+  test('toggle button is a direct child of .file-nav-header (required for collapsed centering CSS)', () => {
+    const files = [makeFile('dom/media/Foo.cpp')];
+    renderFileNav(files, makeDiffWrap(files));
+    const header = document.querySelector('.file-nav-header');
+    const toggle = document.querySelector('.file-nav-toggle');
+    expect(header).not.toBeNull();
+    expect(toggle.parentElement).toBe(header);
+  });
 });
 
 // ── Nav item click (scroll) ───────────────────────────────────────────────

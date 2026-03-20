@@ -304,6 +304,11 @@ body {
 #file-nav.collapsed .file-nav-label,
 #file-nav.collapsed .file-nav-items { display: none; }
 
+#file-nav.collapsed .file-nav-header {
+  padding: 6px;
+  justify-content: center;
+}
+
 .file-nav-toggle {
   background: transparent;
   border: none;

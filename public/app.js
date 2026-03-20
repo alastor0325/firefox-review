@@ -1361,6 +1361,19 @@ function renderCurrentPatch() {
 function initPatchNodes() {
   const container = $('#files-changed');
   patchEls.length = 0;
+
+  if (state.patches.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-worktree';
+    empty.innerHTML = `
+      <div class="empty-worktree-icon">○</div>
+      <p class="empty-worktree-title">No changes</p>
+      <p class="empty-worktree-subtitle">This worktree has no patches to review.</p>`;
+    container.replaceChildren(empty);
+    activateFileNav(null, null);
+    return;
+  }
+
   const frag = document.createDocumentFragment();
   for (let i = 0; i < state.patches.length; i++) {
     const { el, diffWrap, navItemsEl } = buildPatchEl(i);

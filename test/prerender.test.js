@@ -101,6 +101,27 @@ describe('initPatchNodes', () => {
     expect(patchEls[0].el).toBeInstanceOf(Element);
     expect(patchEls[1].el).toBeInstanceOf(Element);
   });
+
+  test('renders empty state when patches is empty', () => {
+    state.patches = [];
+    initPatchNodes();
+    const container = document.getElementById('files-changed');
+    expect(container.querySelector('.empty-worktree')).not.toBeNull();
+  });
+
+  test('empty state contains a title and subtitle', () => {
+    state.patches = [];
+    initPatchNodes();
+    const container = document.getElementById('files-changed');
+    expect(container.querySelector('.empty-worktree-title').textContent).toBe('No changes');
+    expect(container.querySelector('.empty-worktree-subtitle').textContent).toBeTruthy();
+  });
+
+  test('empty state does not add entries to patchEls', () => {
+    state.patches = [];
+    initPatchNodes();
+    expect(patchEls).toHaveLength(0);
+  });
 });
 
 describe('switchPatch', () => {

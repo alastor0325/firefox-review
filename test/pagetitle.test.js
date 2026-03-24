@@ -6,12 +6,16 @@
 global.fetch = jest.fn();
 global.EventSource = jest.fn(() => ({ addEventListener: jest.fn(), close: jest.fn() }));
 
-const { loadAndRender, init } = require('../public/app');
+const { loadAndRender, init, initWorktreeBar } = require('../public/app');
 
 function setupDOM() {
   document.body.innerHTML = `
     <div id="top-bar"></div>
-    <div id="worktree-bar"></div>
+    <div id="worktree-bar">
+      <button id="worktree-scroll-left" class="worktree-scroll-btn">&#8249;</button>
+      <div id="worktree-pills"></div>
+      <button id="worktree-scroll-right" class="worktree-scroll-btn">&#8250;</button>
+    </div>
     <div id="update-banner" style="display:none;"><button id="btn-reload-page"></button></div>
     <div id="header">
       <div id="header-left">
@@ -113,5 +117,62 @@ describe('#btn-reload-page — codebase update banner', () => {
     // loadAndRender fetches /api/diff again — verify it was called
     const diffCalls = global.fetch.mock.calls.filter(([url]) => url === '/api/diff');
     expect(diffCalls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('#worktree-bar scroll buttons — shown/hidden based on overflow', () => {
+  const WORKTREES = [
+    { worktreeName: 'firefox' },
+    { worktreeName: 'bug-111' },
+    { worktreeName: 'bug-222' },
+  ];
+
+  beforeEach(() => {
+    setupDOM();
+    jest.clearAllMocks();
+    global.fetch.mockImplementation((url) => {
+      if (url === '/api/worktrees') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ current: 'bug-111', worktrees: WORKTREES }),
+        });
+      }
+      return Promise.reject(new Error(`Unmocked: ${url}`));
+    });
+  });
+
+  test('scroll buttons are hidden when pills fit without overflow', async () => {
+    const pills = document.getElementById('worktree-pills');
+    Object.defineProperty(pills, 'scrollWidth', { configurable: true, get: () => 200 });
+    Object.defineProperty(pills, 'clientWidth', { configurable: true, get: () => 200 });
+
+    await initWorktreeBar();
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(document.getElementById('worktree-scroll-left').style.display).toBe('none');
+    expect(document.getElementById('worktree-scroll-right').style.display).toBe('none');
+  });
+
+  test('scroll buttons are visible and left is disabled when at scroll start', async () => {
+    const pills = document.getElementById('worktree-pills');
+    Object.defineProperty(pills, 'scrollWidth', { configurable: true, get: () => 800 });
+    Object.defineProperty(pills, 'clientWidth', { configurable: true, get: () => 200 });
+    Object.defineProperty(pills, 'scrollLeft', { configurable: true, get: () => 0 });
+
+    await initWorktreeBar();
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(document.getElementById('worktree-scroll-left').style.display).not.toBe('none');
+    expect(document.getElementById('worktree-scroll-right').style.display).not.toBe('none');
+    expect(document.getElementById('worktree-scroll-left').disabled).toBe(true);
+    expect(document.getElementById('worktree-scroll-right').disabled).toBe(false);
+  });
+
+  test('worktree pills are rendered inside #worktree-pills', async () => {
+    await initWorktreeBar();
+    const pills = document.getElementById('worktree-pills');
+    const rendered = pills.querySelectorAll('.worktree-pill');
+    expect(rendered).toHaveLength(WORKTREES.length);
+    expect(rendered[1].classList.contains('active')).toBe(true); // bug-111 is current
   });
 });

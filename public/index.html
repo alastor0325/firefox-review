@@ -14,7 +14,11 @@
   <div id="top-bar">
 
     <!-- ── Worktree switcher (shown when multiple worktrees exist) ── -->
-    <div id="worktree-bar" style="display:none;"></div>
+    <div id="worktree-bar" style="display:none;">
+      <button id="worktree-scroll-left" class="worktree-scroll-btn" aria-label="Scroll left">&#8249;</button>
+      <div id="worktree-pills"></div>
+      <button id="worktree-scroll-right" class="worktree-scroll-btn" aria-label="Scroll right">&#8250;</button>
+    </div>
 
     <!-- ── Update notification banner (shown when worktree HEAD changes) ── -->
     <div id="update-banner" style="display:none;">

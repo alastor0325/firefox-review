@@ -109,6 +109,29 @@ describe('renderDraftDisplay', () => {
   });
 });
 
+// ── showCommentForm renders all action buttons ─────────────────────────────
+
+describe('showCommentForm button visibility', () => {
+  test('comment form contains all three action buttons', () => {
+    const tr = setupTr();
+    showCommentForm(tr, HASH, FILE, LINE, KEY);
+
+    const formRow = tr.nextElementSibling;
+    expect(formRow.querySelector('.btn-cancel')).not.toBeNull();
+    expect(formRow.querySelector('.btn-discard')).not.toBeNull();
+    expect(formRow.querySelector('.btn-save')).not.toBeNull();
+  });
+
+  test('comment-actions is left-aligned with flex-wrap so buttons are always visible', () => {
+    const css = require('fs').readFileSync(
+      require('path').join(__dirname, '../public/style.css'), 'utf8'
+    );
+    const actionsBlock = css.match(/\.comment-actions\s*\{[^}]+\}/)?.[0] ?? '';
+    expect(actionsBlock).toContain('flex-wrap: wrap');
+    expect(actionsBlock).toContain('justify-content: flex-start');
+  });
+});
+
 // ── draft row restored when form is closed ─────────────────────────────────
 
 describe('draft row restored when form is closed', () => {

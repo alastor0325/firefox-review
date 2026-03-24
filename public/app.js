@@ -1473,11 +1473,31 @@ async function initWorktreeBar() {
     if (worktrees.length <= 1) return; // nothing to switch to
 
     const bar = $('#worktree-bar');
-    bar.innerHTML = worktrees.map((wt) =>
+    const pills = $('#worktree-pills');
+    const btnLeft = $('#worktree-scroll-left');
+    const btnRight = $('#worktree-scroll-right');
+
+    pills.innerHTML = worktrees.map((wt) =>
       `<button class="worktree-pill${wt.worktreeName === current ? ' active' : ''}" data-name="${escapeHtml(wt.worktreeName)}">${escapeHtml(wt.worktreeName)}</button>`
     ).join('');
 
-    bar.addEventListener('click', async (e) => {
+    // Scroll arrow logic
+    function updateScrollBtns() {
+      const atLeft = pills.scrollLeft <= 0;
+      const atRight = pills.scrollLeft + pills.clientWidth >= pills.scrollWidth - 1;
+      btnLeft.disabled = atLeft;
+      btnRight.disabled = atRight;
+      btnLeft.style.display = pills.scrollWidth <= pills.clientWidth ? 'none' : '';
+      btnRight.style.display = pills.scrollWidth <= pills.clientWidth ? 'none' : '';
+    }
+    const SCROLL_STEP = 160;
+    btnLeft.addEventListener('click', () => { pills.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' }); });
+    btnRight.addEventListener('click', () => { pills.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' }); });
+    pills.addEventListener('scroll', updateScrollBtns, { passive: true });
+    // Re-check after layout (fonts/widths may not be ready yet)
+    setTimeout(updateScrollBtns, 50);
+
+    pills.addEventListener('click', async (e) => {
       const btn = e.target.closest('.worktree-pill');
       if (!btn || btn.classList.contains('active')) return;
       const name = btn.dataset.name;
@@ -1491,7 +1511,7 @@ async function initWorktreeBar() {
         });
         if (!r.ok) throw new Error('Switch failed');
         // Update active pill
-        bar.querySelectorAll('.worktree-pill').forEach((p) => {
+        pills.querySelectorAll('.worktree-pill').forEach((p) => {
           p.classList.toggle('active', p.dataset.name === name);
           p.disabled = false;
           p.textContent = p.dataset.name;
@@ -1659,6 +1679,7 @@ if (typeof module !== 'undefined') {
     patchEls,
     loadAndRender,
     init,
+    initWorktreeBar,
   };
 }
 

@@ -14,14 +14,39 @@ body {
 #worktree-bar {
   background: #0d1117;
   border-bottom: 1px solid #30363d;
-  padding: 6px 16px 0;
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+}
+
+#worktree-pills {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-end;
   gap: 2px;
+  padding: 6px 4px 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
-#worktree-bar::-webkit-scrollbar { display: none; }
+#worktree-pills::-webkit-scrollbar { display: none; }
+
+.worktree-scroll-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #6e7681;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 10px 6px;
+  cursor: pointer;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s, background 0.12s;
+}
+.worktree-scroll-btn:hover { color: #c9d1d9; background: #161b22; }
+.worktree-scroll-btn:disabled { opacity: 0.2; cursor: default; }
 
 .worktree-pill {
   padding: 6px 16px 7px;
@@ -821,9 +846,10 @@ tr.comment-draft-row td {
 
 .comment-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .btn-save {

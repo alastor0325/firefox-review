@@ -9,7 +9,7 @@
     "test": "jest --testPathPattern=test/ --forceExit --silent",
     "test:watch": "jest --testPathPattern=test/ --watch --forceExit",
     "test:coverage": "jest --testPathPattern=test/ --coverage --forceExit --silent",
-    "dev": "nodemon --watch src --watch public --watch bin bin/revue.js"
+    "dev": "nodemon --watch src --watch public --watch bin bin/revue.js --no-open"
   },
   "jest": {
     "testEnvironment": "node",

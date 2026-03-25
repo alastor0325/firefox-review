@@ -66,11 +66,12 @@ function getCommits(worktreePath, mainRepoPath) {
 
   return output.split('\n').map((line) => {
     const spaceIdx = line.indexOf(' ');
+    if (spaceIdx === -1) return null;
     return {
       hash: line.slice(0, spaceIdx),
       message: line.slice(spaceIdx + 1),
     };
-  });
+  }).filter(Boolean);
 }
 
 /**

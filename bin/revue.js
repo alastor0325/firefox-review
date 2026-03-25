@@ -215,23 +215,26 @@ function waitForPort(pid, timeoutMs) {
 }
 
 /**
- * Parse CLI args, extracting --port and --repo and the optional worktree name.
- * Returns { port, repo, rest } where rest is the remaining positional args.
+ * Parse CLI args, extracting --port, --repo, --no-open and the optional worktree name.
+ * Returns { port, repo, noOpen, rest } where rest is the remaining positional args.
  */
 function parseArgs(args) {
   let port = null;
   let repo = null;
+  let noOpen = false;
   const rest = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port' && i + 1 < args.length) {
       port = parseInt(args[++i], 10);
     } else if (args[i] === '--repo' && i + 1 < args.length) {
       repo = args[++i];
+    } else if (args[i] === '--no-open') {
+      noOpen = true;
     } else {
       rest.push(args[i]);
     }
   }
-  return { port, repo, rest };
+  return { port, repo, noOpen, rest };
 }
 
 function printHelp() {
@@ -248,6 +251,7 @@ Commands:
 Options:
   --repo <path>                Override the default repo for this run
   --port <port>                Use a specific port (default: 7777)
+  --no-open                    Do not open the browser on start
   --help, -h                   Show this help message
 
 Examples:
@@ -311,7 +315,7 @@ async function main() {
   process.on('exit', () => { try { fs.unlinkSync(myPidFile); } catch {} });
   process.on('SIGTERM', () => process.exit(0));
 
-  const { port, repo, rest: positional } = parseArgs(rawArgs);
+  const { port, repo, noOpen, rest: positional } = parseArgs(rawArgs);
   const config = readConfig();
   const mainRepoPath = repo ? resolvePath(repo) : config.defaultRepo;
 
@@ -345,7 +349,7 @@ async function main() {
     process.exit(1);
   }
 
-  startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: myPidFile, ...(port && { port }) });
+  startServer({ worktreeName, worktreePath, mainRepoPath, pidFile: myPidFile, ...(port && { port }), noOpen });
 }
 
 if (require.main === module) {

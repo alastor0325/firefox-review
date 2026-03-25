@@ -44,6 +44,7 @@ function draftKey(patchHash, filePath, key) {
 // ── Auto-save ──────────────────────────────────────────────────────────────
 let saveTimer = null;
 let savedPromptText = null;
+let _pollTimer = null;
 
 function scheduleAutoSave() {
   clearTimeout(saveTimer);
@@ -1451,12 +1452,12 @@ function addDragScroll(el) {
   });
 
   document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
+    if (!dragging || !el.isConnected) { dragging = false; return; }
     el.scrollLeft = startScroll - (e.clientX - startX);
   });
 
   document.addEventListener('mouseup', () => {
-    if (!dragging) return;
+    if (!dragging || !el.isConnected) { dragging = false; return; }
     dragging = false;
     el.style.cursor = '';
   });
@@ -1705,7 +1706,7 @@ async function startUpdatePolling() {
     return; // endpoint unavailable (e.g. demo mode) — silently skip
   }
 
-  setInterval(async () => {
+  _pollTimer = setInterval(async () => {
     try {
       const res = await fetch('/api/headhash');
       if (!res.ok) return;
@@ -1740,6 +1741,8 @@ if (typeof module !== 'undefined') {
     loadAndRender,
     init,
     initWorktreeBar,
+    addDragScroll,
+    getPollTimer: () => _pollTimer,
   };
 }
 

@@ -273,7 +273,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
 /**
  * Start the review web server.
  */
-async function startServer({ worktreeName, worktreePath, mainRepoPath, pidFile, port: preferredPort = 7777 }) {
+async function startServer({ worktreeName, worktreePath, mainRepoPath, pidFile, port: preferredPort = 7777, noOpen = false }) {
   const app = createApp({ worktreeName, worktreePath, mainRepoPath });
   const port = await findAvailablePort(preferredPort);
 
@@ -283,7 +283,7 @@ async function startServer({ worktreeName, worktreePath, mainRepoPath, pidFile, 
       if (pidFile) {
         try { fs.writeFileSync(pidFile, `${process.pid}:${port}`); } catch {}
       }
-      openBrowser(url);
+      if (!noOpen) openBrowser(url);
       resolve(server);
     });
   });

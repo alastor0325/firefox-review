@@ -91,7 +91,7 @@ To run with auto-restart on file changes during development (bypasses daemon mod
 REVUE_DAEMON=1 npm run dev -- my-feature
 ```
 
-nodemon watches `src/`, `public/`, and `bin/` and restarts the server on any change. Refresh the browser tab manually to pick up the new build.
+nodemon watches `src/`, `public/`, and `bin/` and restarts the server on any change. The dev script passes `--no-open` so the browser is not re-opened on every restart — open it manually once, then refresh the tab after each restart.
 
 Alternatively, `revue --restart` is sufficient for one-off server restarts when not actively editing code.
 

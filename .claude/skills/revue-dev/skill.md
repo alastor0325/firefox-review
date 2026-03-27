@@ -2,8 +2,9 @@
 name: dev
 description: >
   Development loop for the revue project: implement a change, self-review the diff,
-  run tests, fix any failures, and repeat until clean. Use for any feature or bug fix
-  in this repo. Triggers on: "dev loop", "/dev", "implement and test", "start dev loop".
+  run tests, spawn an agent review (simplify), commit, and push. ALL steps are mandatory.
+  Use for any feature or bug fix in this repo.
+  Triggers on: "dev loop", "/dev", "implement and test", "start dev loop".
 allowed-tools: [Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion]
 ---
 
@@ -12,8 +13,10 @@ allowed-tools: [Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion]
 This is the development loop for the **revue** project. Every cycle goes:
 
 ```
-Develop → Self-Review → Test → (fix & repeat if needed)
+Develop → Self-Review → Test → Agent Review → Commit → Push → (fix & repeat if needed)
 ```
+
+**IMPORTANT: ALL steps are mandatory for every code change. Do not respond as done until commit and push are complete.**
 
 Project rules (from CLAUDE.md):
 - Every code change **must** include a corresponding test in the same response.
@@ -69,15 +72,39 @@ Fix any issues found before running tests.
 npm test
 ```
 
-**If tests pass**: done for this cycle. Report what was changed and confirmed green.
+**If tests pass**: proceed to Step 5.
 
 **If tests fail**: read the failure output carefully, fix the root cause (do NOT skip or suppress), then go back to Step 3. Do not loop more than 3 times before asking the user what's wrong.
 
 ---
 
-## Step 5 — Loop or Done
+## Step 5 — Agent Review
 
-If the task is complete and tests are green, summarize:
+Spawn a `simplify` agent to review the changed code for reuse, quality, and efficiency:
+
+```
+/simplify
+```
+
+Wait for the agent to finish. If it finds issues, fix them and go back to Step 3. Only proceed when the agent review is clean.
+
+---
+
+## Step 6 — Commit & Push
+
+```bash
+git add <changed files>
+git commit -m "<message>"
+git push
+```
+
+Commit message must describe *why*, not just what. Do not use `--no-verify`.
+
+---
+
+## Step 7 — Loop or Done
+
+If the task is complete, summarize:
 - What was changed and why
 - Which tests cover it
 - Any README updates made

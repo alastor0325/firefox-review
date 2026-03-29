@@ -344,6 +344,20 @@ describe('GET /api/state', () => {
     const res = await request(app).get('/api/state');
     expect(res.body.approved).toEqual(['aaa111']);
   });
+
+  test('POST returns 500 when write fails', async () => {
+    const app = makeStateApp();
+    const writeStub = jest.spyOn(fs, 'writeFileSync').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    try {
+      const res = await request(app).post('/api/state').send({ approved: [] });
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain('disk full');
+    } finally {
+      writeStub.mockRestore();
+    }
+  });
 });
 
 // ── GET /api/patchdiff/:hash ───────────────────────────────────────────────

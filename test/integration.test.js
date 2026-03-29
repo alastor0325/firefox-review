@@ -451,6 +451,16 @@ describe('revdiff integration', () => {
     expect(lines.some((l) => l.type === 'removed' && l.content === 'const y = 20;')).toBe(true);
   });
 
+  test('GET /api/diff returns both commits in oldest-first order', async () => {
+    const { status, body } = await httpRequest(`http://127.0.0.1:${revPort}/api/diff`);
+    expect(status).toBe(200);
+    expect(body.patches).toHaveLength(2);
+    expect(body.patches[0].message).toBe('v1: set y to 20');
+    expect(body.patches[1].message).toBe('v2: set y to 200');
+    expect(body.patches[0].files[0].newPath).toBe('calc.js');
+    expect(body.patches[1].files[0].newPath).toBe('calc.js');
+  });
+
   test('GET /api/revdiff returns empty files array when comparing a commit to itself', async () => {
     const shortV1 = hashV1.slice(0, 8);
     const { status, body } = await httpRequest(

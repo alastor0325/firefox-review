@@ -58,7 +58,7 @@ function runInit(args, configFile = CONFIG_FILE) {
 // ── PID tracking ───────────────────────────────────────────────────────────
 
 function ensurePidsDir() {
-  if (!fs.existsSync(PIDS_DIR)) fs.mkdirSync(PIDS_DIR, { recursive: true });
+  fs.mkdirSync(PIDS_DIR, { recursive: true });
 }
 
 function pidFilePath(pid) {

@@ -551,6 +551,13 @@ describe('getFileLines', () => {
     execSync.mockImplementation(() => { throw new Error('not found'); });
     expect(() => getFileLines(WORKTREE, HASH, FILE, 1, 5)).toThrow('not found');
   });
+
+  test('returns empty lines array when start is beyond the end of the file', () => {
+    execSync.mockReturnValue('a\nb\nc\n');
+    const result = getFileLines(WORKTREE, HASH, FILE, 10, 20);
+    expect(result.lines).toHaveLength(0);
+    expect(result.totalLines).toBe(3);
+  });
 });
 
 // ── getDiffBetweenCommits ──────────────────────────────────────────────────

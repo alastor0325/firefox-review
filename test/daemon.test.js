@@ -218,6 +218,18 @@ describe('readAllInstances', () => {
       removePidEntry(pid2);
     }
   });
+
+  test('skips non-numeric filenames in PIDS_DIR', () => {
+    ensurePidsDir();
+    const strayFile = pidFilePath('README');
+    fs.writeFileSync(strayFile, 'not a pid', 'utf8');
+    try {
+      const instances = readAllInstances();
+      expect(instances.every((i) => !isNaN(i.pid))).toBe(true);
+    } finally {
+      try { fs.unlinkSync(strayFile); } catch {}
+    }
+  });
 });
 
 // ── isRunning ──────────────────────────────────────────────────────────────

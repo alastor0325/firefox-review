@@ -367,6 +367,36 @@ describe('inline line comments', () => {
   });
 });
 
+// ── Tab rendering stability ────────────────────────────────────────────────
+// Verifies the anti-flicker fix: renderTabs() reuses existing tab DOM elements
+// rather than destroying and recreating them, so tabs don't flash on state changes.
+
+describe('tab rendering stability', () => {
+  test('tab DOM elements survive tab switches', async () => {
+    await page.evaluate(() => { document.querySelector('.patch-tab').__stable = true; });
+    const tabs = await page.$$('.patch-tab');
+    await tabs[1].click();
+    await page.waitForFunction(() => document.querySelectorAll('.patch-tab')[1].classList.contains('active'));
+    await tabs[0].click();
+    await page.waitForFunction(() => document.querySelectorAll('.patch-tab')[0].classList.contains('active'));
+    expect(await page.evaluate(() => document.querySelector('.patch-tab').__stable)).toBe(true);
+  });
+
+  test('tab DOM elements survive renderTabs calls during approve/unapprove', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.patch-tab').forEach((btn, i) => { btn.__idx = i; });
+    });
+    await page.click('.btn-approve');
+    await page.waitForSelector('.btn-unapprove');
+    await page.click('.btn-unapprove');
+    await page.waitForSelector('.btn-approve');
+    const idxs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.patch-tab')).map((btn) => btn.__idx)
+    );
+    expect(idxs).toEqual([0, 1]);
+  });
+});
+
 // ── General feedback textarea ──────────────────────────────────────────────
 // Uses a fresh page so submit-button state starts clean (no prior approvals/comments).
 
@@ -416,17 +446,121 @@ describe('expand context', () => {
     expect(await btn.textContent()).toMatch(/Lines?/);
   });
 
-  test('clicking expand button fires a /api/filecontext request and server responds', async () => {
+  test('the bottom expand button has data-action="down"', async () => {
+    // feature.js is a new 5-line file; the only expand row is at the bottom
+    expect(await expandPage.$eval('.btn-exp', (el) => el.getAttribute('data-action'))).toBe('down');
+  });
+
+  test('clicking expand fires /api/filecontext and server returns empty lines past EOF', async () => {
     // Register the listener before the click so the response isn't missed.
     const responsePromise = expandPage.waitForResponse(
       (r) => r.url().includes('/api/filecontext'),
       { timeout: 8000 }
     );
-    await expandPage.evaluate(() => document.querySelector('.btn-exp').click());
+    await expandPage.$eval('.btn-exp', (el) => el.click());
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     const body = await response.json();
-    expect(typeof body.totalLines).toBe('number');
-    expect(Array.isArray(body.lines)).toBe(true);
+    // feature.js has 5 lines; curStart=6 is past EOF → server returns empty lines
+    expect(body.lines).toHaveLength(0);
+    expect(body.totalLines).toBe(5);
+  });
+});
+
+// ── Expand context — larger file ───────────────────────────────────────────
+// A 50-line file modified at line 25 gives two expand rows with a large gap:
+//   Top:    lines 1–21 hidden (count=21 > 20) → "↑ 20 Lines" (data-action="up")
+//   Bottom: lines 29–50 hidden (unknown end)  → "↓ 20 Lines" (data-action="down")
+// This exercises the up button, the down button, the small (↕) button that
+// appears after partial expansion, and full gap closure (row removal).
+
+describe('expand context — larger file', () => {
+  let richServer, richPage, richTmpDir;
+
+  // Click the first expand button and wait for new context lines to appear.
+  // Returns the number of .line-context rows added.
+  async function clickFirstExpand() {
+    const before = (await richPage.$$('.line-context')).length;
+    const responsePromise = richPage.waitForResponse((r) => r.url().includes('/api/filecontext'));
+    await (await richPage.$$('.expand-context-row'))[0].$eval('.btn-exp', (el) => el.click());
+    await responsePromise;
+    await richPage.waitForFunction((n) => document.querySelectorAll('.line-context').length > n, before);
+    return (await richPage.$$('.line-context')).length - before;
+  }
+
+  beforeAll(async () => {
+    richTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'revue-ui-rich-'));
+    const richMain = path.join(richTmpDir, 'main');
+    const richWork = path.join(richTmpDir, 'work');
+
+    fs.mkdirSync(richMain);
+    git(richMain, 'init');
+    git(richMain, 'config user.email "test@test.com"');
+    git(richMain, 'config user.name "Test"');
+
+    const lines = Array.from({ length: 50 }, (_, i) => `const L${i + 1} = ${i + 1};`);
+    fs.writeFileSync(path.join(richMain, 'large.js'), lines.join('\n') + '\n');
+    git(richMain, 'add .');
+    git(richMain, 'commit -m "initial"');
+
+    execSync(`git clone "${richMain}" "${richWork}"`, { encoding: 'utf8' });
+    git(richWork, 'config user.email "test@test.com"');
+    git(richWork, 'config user.name "Test"');
+
+    lines[24] = `const L25 = 'modified';`;
+    fs.writeFileSync(path.join(richWork, 'large.js'), lines.join('\n') + '\n');
+    git(richWork, 'add .');
+    git(richWork, 'commit -m "feat: modify line 25"');
+
+    const app = createApp({ worktreeName: 'work', worktreePath: richWork, mainRepoPath: richMain });
+    const port = await findAvailablePort(19500);
+    await new Promise((resolve) => { richServer = app.listen(port, '127.0.0.1', resolve); });
+
+    richPage = await browser.newPage();
+    await richPage.goto(`http://127.0.0.1:${port}`);
+    await richPage.waitForSelector('.patch-heading', { state: 'visible' });
+  }, 30000);
+
+  afterAll(async () => {
+    await richPage?.close();
+    await new Promise((resolve) => richServer?.close(resolve));
+    fs.rmSync(richTmpDir, { recursive: true, force: true });
+  });
+
+  test('two expand-context rows are present (top and bottom)', async () => {
+    expect((await richPage.$$('.expand-context-row')).length).toBe(2);
+  });
+
+  test('top expand button shows "↑ 20 Lines" with data-action="up"', async () => {
+    const topBtn = await (await richPage.$$('.expand-context-row'))[0].$('.btn-exp');
+    expect(await topBtn.textContent()).toBe('↑ 20 Lines');
+    expect(await topBtn.getAttribute('data-action')).toBe('up');
+  });
+
+  test('bottom expand button shows "↓ 20 Lines" with data-action="down"', async () => {
+    const bottomBtn = await (await richPage.$$('.expand-context-row'))[1].$('.btn-exp');
+    expect(await bottomBtn.textContent()).toBe('↓ 20 Lines');
+    expect(await bottomBtn.getAttribute('data-action')).toBe('down');
+  });
+
+  test('clicking "↑ 20 Lines" loads 20 context lines and button updates to "↕ 1 Line"', async () => {
+    expect(await clickFirstExpand()).toBe(20);
+    const topText = await (await richPage.$$('.expand-context-row'))[0].textContent();
+    expect(topText).toContain('↕ 1 Line');
+  });
+
+  test('clicking "↕ 1 Line" loads the last line and removes the top expand row', async () => {
+    expect(await clickFirstExpand()).toBe(1);
+    await richPage.waitForFunction(() => document.querySelectorAll('.expand-context-row').length === 1);
+  });
+
+  test('clicking "↓ 20 Lines" loads 20 context lines and button updates to "↕ 2 Lines"', async () => {
+    expect(await clickFirstExpand()).toBe(20);
+    expect(await (await richPage.$('.expand-context-row')).textContent()).toContain('↕ 2 Lines');
+  });
+
+  test('clicking "↕ 2 Lines" loads last 2 lines and removes all expand rows', async () => {
+    expect(await clickFirstExpand()).toBe(2);
+    await richPage.waitForFunction(() => document.querySelectorAll('.expand-context-row').length === 0);
   });
 });

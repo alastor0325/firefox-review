@@ -564,3 +564,79 @@ describe('expand context — larger file', () => {
     await richPage.waitForFunction(() => document.querySelectorAll('.expand-context-row').length === 0);
   });
 });
+
+// ── Sidebar file highlight ─────────────────────────────────────────────────
+// A single patch that touches two files gives a sidebar with two nav items.
+// Clicking the second item must immediately update the active highlight even
+// when no scroll occurs (both blocks may already be in the viewport).
+
+describe('sidebar file highlight', () => {
+  let navServer, navPage, navTmpDir;
+
+  beforeAll(async () => {
+    navTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'revue-ui-nav-'));
+    const navMain = path.join(navTmpDir, 'main');
+    const navWork = path.join(navTmpDir, 'work');
+
+    fs.mkdirSync(navMain);
+    git(navMain, 'init');
+    git(navMain, 'config user.email "test@test.com"');
+    git(navMain, 'config user.name "Test"');
+    fs.writeFileSync(path.join(navMain, 'alpha.js'), 'const a = 1;\n');
+    fs.writeFileSync(path.join(navMain, 'beta.js'), 'const b = 2;\n');
+    git(navMain, 'add .');
+    git(navMain, 'commit -m "initial"');
+
+    execSync(`git clone "${navMain}" "${navWork}"`, { encoding: 'utf8' });
+    git(navWork, 'config user.email "test@test.com"');
+    git(navWork, 'config user.name "Test"');
+    fs.writeFileSync(path.join(navWork, 'alpha.js'), 'const a = 10;\n');
+    fs.writeFileSync(path.join(navWork, 'beta.js'), 'const b = 20;\n');
+    git(navWork, 'add .');
+    git(navWork, 'commit -m "feat: update both files"');
+
+    const app = createApp({ worktreeName: 'work', worktreePath: navWork, mainRepoPath: navMain });
+    const port = await findAvailablePort(19600);
+    await new Promise((resolve) => { navServer = app.listen(port, '127.0.0.1', resolve); });
+
+    navPage = await browser.newPage();
+    await navPage.goto(`http://127.0.0.1:${port}`);
+    await navPage.waitForSelector('.file-nav-item', { state: 'visible' });
+  }, 30000);
+
+  afterAll(async () => {
+    await navPage?.close();
+    await new Promise((resolve) => navServer?.close(resolve));
+    fs.rmSync(navTmpDir, { recursive: true, force: true });
+  });
+
+  test('sidebar shows two file nav items', async () => {
+    expect((await navPage.$$('.file-nav-item')).length).toBe(2);
+  });
+
+  test('first item is active on load', async () => {
+    const items = await navPage.$$('.file-nav-item');
+    expect(await items[0].evaluate((el) => el.classList.contains('active'))).toBe(true);
+    expect(await items[1].evaluate((el) => el.classList.contains('active'))).toBe(false);
+  });
+
+  test('clicking second item immediately updates the active highlight', async () => {
+    const items = await navPage.$$('.file-nav-item');
+    await items[1].click();
+    await navPage.waitForFunction(
+      () => document.querySelectorAll('.file-nav-item')[1].classList.contains('active')
+    );
+    expect(await items[1].evaluate((el) => el.classList.contains('active'))).toBe(true);
+    expect(await items[0].evaluate((el) => el.classList.contains('active'))).toBe(false);
+  });
+
+  test('clicking first item restores the first item as active', async () => {
+    const items = await navPage.$$('.file-nav-item');
+    await items[0].click();
+    await navPage.waitForFunction(
+      () => document.querySelectorAll('.file-nav-item')[0].classList.contains('active')
+    );
+    expect(await items[0].evaluate((el) => el.classList.contains('active'))).toBe(true);
+    expect(await items[1].evaluate((el) => el.classList.contains('active'))).toBe(false);
+  });
+});

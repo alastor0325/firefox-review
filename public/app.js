@@ -896,9 +896,12 @@ function buildNavItemsEl(files, diffWrap) {
     statsSpan.innerHTML = `<span class="stat-add">+${added}</span><span class="stat-del">-${removed}</span>`;
     item.appendChild(statsSpan);
 
-    // Click handler reads getBoundingClientRect at click time (element is visible then)
+    // Click handler reads getBoundingClientRect at click time (element is visible then).
+    // Immediately update the active class so the highlight reflects the click even
+    // when no scroll occurs (e.g. the target block is already in the viewport).
     item.addEventListener('click', () => {
       if (!block) return;
+      navItems.forEach((ni, i) => ni.classList.toggle('active', i === idx));
       const topH = ($('#top-bar') || {}).offsetHeight || 0;
       const y = block.getBoundingClientRect().top + window.scrollY - topH - 8;
       window.scrollTo({ top: y, behavior: 'smooth' });

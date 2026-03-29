@@ -205,6 +205,25 @@ diff --git a/foo.js b/foo.js
     expect(files[0].hunks[0].oldCount).toBe(1);
     expect(files[0].hunks[0].newCount).toBe(1);
   });
+
+  test('silently skips "no newline at end of file" marker lines', () => {
+    const diff = `diff --git a/foo.js b/foo.js
+--- a/foo.js
++++ b/foo.js
+@@ -1,2 +1,2 @@
+ context
+-old line
+\\ No newline at end of file
++new line
+\\ No newline at end of file`;
+
+    const files = parseDiff(diff);
+    const lines = files[0].hunks[0].lines;
+    expect(lines.every((l) => !l.content.startsWith('No newline'))).toBe(true);
+    expect(lines.filter((l) => l.type === 'removed').map((l) => l.content)).toEqual(['old line']);
+    expect(lines.filter((l) => l.type === 'added').map((l) => l.content)).toEqual(['new line']);
+    expect(lines.filter((l) => l.type === 'context').map((l) => l.content)).toEqual(['context']);
+  });
 });
 
 // ── parseWorktreeList ──────────────────────────────────────────────────────

@@ -582,6 +582,32 @@ describe('discoverWorktrees and worktree switching integration', () => {
     expect(body.worktreeName).toBe('feature');
     expect(body.patches).toHaveLength(0);
   });
+
+  test('GET /api/state and POST /api/state use the state file of the active worktree', async () => {
+    const sw1 = await httpRequest(`http://127.0.0.1:${wtPort}/api/switch`, {
+      method: 'POST',
+      body: { worktreeName: 'feature' },
+    });
+    expect(sw1.status).toBe(200);
+
+    const post = await httpRequest(`http://127.0.0.1:${wtPort}/api/state`, {
+      method: 'POST',
+      body: { stateMarker: 'feature-worktree' },
+    });
+    expect(post.status).toBe(200);
+
+    const featureGet = await httpRequest(`http://127.0.0.1:${wtPort}/api/state`);
+    expect(featureGet.body.stateMarker).toBe('feature-worktree');
+
+    const sw2 = await httpRequest(`http://127.0.0.1:${wtPort}/api/switch`, {
+      method: 'POST',
+      body: { worktreeName: 'repo' },
+    });
+    expect(sw2.status).toBe(200);
+
+    const repoGet = await httpRequest(`http://127.0.0.1:${wtPort}/api/state`);
+    expect(repoGet.body.stateMarker).toBeUndefined();
+  });
 });
 
 // ── getMergeBase — fallback when origin/main is absent ────────────────────

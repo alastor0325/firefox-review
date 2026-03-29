@@ -1027,3 +1027,53 @@ describe('submit error state', () => {
     expect(await errSubmitPage.$eval('#btn-submit', (el) => el.disabled)).toBe(false);
   });
 });
+
+describe('current-prompt-bar appears after all patches reviewed and submitted', () => {
+  let promptBarPage;
+
+  beforeAll(async () => {
+    promptBarPage = await openFreshPage();
+
+    // Approve the first patch (active by default).
+    // At this point there are 0 .btn-unapprove elements, so waitForSelector is unambiguous.
+    if (await promptBarPage.$('.btn-approve')) {
+      await promptBarPage.click('.btn-approve');
+      await promptBarPage.waitForSelector('.btn-unapprove');
+    }
+
+    // Switch to second patch and approve it too.
+    const tabs = await promptBarPage.$$('.patch-tab');
+    await tabs[1].click();
+    await promptBarPage.waitForFunction(() =>
+      document.querySelectorAll('.patch-tab')[1].classList.contains('active')
+    );
+    // Use a count-based wait: patch 1 may already have a .btn-unapprove in the DOM,
+    // so waitForSelector would resolve immediately before patch 2 is actually approved.
+    if (await promptBarPage.$('.btn-approve')) {
+      const countBefore = await promptBarPage.$$eval('.btn-unapprove', (els) => els.length);
+      await promptBarPage.click('.btn-approve');
+      await promptBarPage.waitForFunction(
+        (n) => document.querySelectorAll('.btn-unapprove').length > n,
+        countBefore,
+      );
+    }
+
+    // Submit — all patches are now approved
+    await promptBarPage.click('#btn-submit');
+    await promptBarPage.waitForFunction(
+      () => document.getElementById('result-overlay')?.classList.contains('visible'),
+      { timeout: 15000 }
+    );
+  }, 60000);
+
+  afterAll(async () => {
+    await promptBarPage?.close();
+    try { fs.unlinkSync(path.join(workRepoPath, 'REVIEW_FEEDBACK_work-repo.md')); } catch {}
+  });
+
+  test('current-prompt-bar is visible when all patches are approved and prompt is set', async () => {
+    expect(
+      await promptBarPage.$eval('#current-prompt-bar', (el) => el.style.display)
+    ).not.toBe('none');
+  });
+});

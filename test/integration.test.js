@@ -15,12 +15,9 @@ const {
   getHeadHash, getCommits, getDiffPerCommit, getFileLines,
 } = require('../src/git');
 const { createApp, startServer, findAvailablePort } = require('../src/server');
+const { git } = require('./helpers');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function git(cwd, cmd) {
-  return execSync(`git ${cmd}`, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-}
 
 function httpRequest(url, { method = 'GET', body = null } = {}) {
   return new Promise((resolve, reject) => {

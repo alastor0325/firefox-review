@@ -1405,6 +1405,7 @@ async function submitReview() {
   btn.disabled = true;
   btn.textContent = 'Generating…';
 
+  let submitError = null;
   try {
     const res = await fetch('/api/submit', {
       method: 'POST',
@@ -1431,11 +1432,15 @@ async function submitReview() {
 
     renderTabs();
   } catch (err) {
-    const warn = $('#submit-warning');
-    if (warn) warn.textContent = `Error: ${err.message}`;
+    submitError = err.message;
   } finally {
     btn.textContent = 'Generate Review Prompt';
     updateSubmitButton();
+    // Set error AFTER updateSubmitButton so it is not cleared when hasActivity is true
+    if (submitError) {
+      const warn = $('#submit-warning');
+      if (warn) warn.textContent = `Error: ${submitError}`;
+    }
   }
 }
 

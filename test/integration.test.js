@@ -338,6 +338,29 @@ describe('server HTTP integration', () => {
     });
     expect(raw).toMatch(/^data: \S+/m);
   });
+
+  test('GET /api/diff recomputes patches after a new commit is made to the worktree', async () => {
+    const before = await httpRequest(`${baseUrl}/api/diff`);
+    expect(before.body.patches).toHaveLength(1);
+
+    fs.writeFileSync(path.join(workRepoPath, 'extra.js'), 'const extra = 1;\n');
+    git(workRepoPath, 'add .');
+    git(workRepoPath, 'commit -m "extra: cache invalidation test"');
+    try {
+      const after = await httpRequest(`${baseUrl}/api/diff`);
+      expect(after.status).toBe(200);
+      expect(after.body.patches).toHaveLength(2);
+      expect(after.body.patches[1].message).toBe('extra: cache invalidation test');
+    } finally {
+      git(workRepoPath, `reset --hard ${commitHash}`);
+    }
+  });
+
+  test('GET /api/patchdiff/:hash returns 404 when hash does not exist in the repo', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/api/patchdiff/deadbeef1234`);
+    expect(status).toBe(404);
+    expect(body.error).toMatch(/deadbeef1234/);
+  });
 });
 
 // ── startServer lifecycle ─────────────────────────────────────────────────

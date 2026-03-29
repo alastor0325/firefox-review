@@ -983,3 +983,47 @@ describe('error state', () => {
     expect(await errPage.$eval('#loading', (el) => el.style.display)).toBe('none');
   });
 });
+
+// ── Submit error state ─────────────────────────────────────────────────────
+// When POST /api/submit returns a server error the catch block in
+// submitReview() must surface the message in #submit-warning and re-enable
+// the button.  Verified via Playwright route interception.
+
+describe('submit error state', () => {
+  let errSubmitPage;
+
+  beforeAll(async () => {
+    errSubmitPage = await browser.newPage();
+    await errSubmitPage.route('**/api/submit', (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'disk write failed' }),
+      })
+    );
+    await errSubmitPage.goto(baseUrl);
+    await errSubmitPage.waitForSelector('.patch-heading', { state: 'visible' });
+    // Enable submit if not already enabled — works regardless of state loaded from disk.
+    // If previous tests saved approved state, the button is already enabled; skip approve.
+    const isDisabled = await errSubmitPage.$eval('#btn-submit', (el) => el.disabled);
+    if (isDisabled) {
+      await errSubmitPage.click('.btn-approve');
+      await errSubmitPage.waitForSelector('.btn-unapprove');
+    }
+    await errSubmitPage.click('#btn-submit');
+    await errSubmitPage.waitForFunction(
+      () => document.getElementById('submit-warning').textContent.includes('Error'),
+      { timeout: 5000 }
+    );
+  }, 30000);
+
+  afterAll(async () => { await errSubmitPage?.close(); });
+
+  test('submit warning shows the server error message', async () => {
+    expect(await errSubmitPage.textContent('#submit-warning')).toContain('disk write failed');
+  });
+
+  test('submit button is re-enabled after a failed submit', async () => {
+    expect(await errSubmitPage.$eval('#btn-submit', (el) => el.disabled)).toBe(false);
+  });
+});

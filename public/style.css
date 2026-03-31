@@ -1140,8 +1140,6 @@ tr.comment-draft-row td {
   user-select: none;
   scrollbar-width: thin;
   scrollbar-color: #484f58 #1c2128;
-  /* Fade buttons that have scrolled close to (or behind) the label */
-  mask-image: linear-gradient(to right, transparent 0px, black 28px);
 }
 
 .btn-compare-toggle {

@@ -1107,6 +1107,13 @@ function buildPatchEl(idx) {
       });
       bar.appendChild(scroll);
       addDragScroll(scroll);
+      const updateMask = () => {
+        scroll.style.maskImage = scroll.scrollLeft > 0
+          ? 'linear-gradient(to right, transparent 0px, black 28px)'
+          : '';
+      };
+      scroll.addEventListener('scroll', updateMask, { passive: true });
+      updateMask();
       bar._scroll = scroll; // expose scroll container for extra button appends
       return bar;
     };

@@ -1545,6 +1545,14 @@ describe('revision compare mode', () => {
     expect(firstBtnText).toContain('current');
   });
 
+  test('no left fade when at scrollLeft=0 — first button fully visible', async () => {
+    const maskImage = await revCompPage.$eval(
+      '.revision-toggle-scroll',
+      (el) => el.style.maskImage
+    );
+    expect(maskImage).toBe('');
+  });
+
   test('⇄ compare button is present and not active', async () => {
     const btn = await revCompPage.$('.btn-compare-toggle');
     expect(btn).not.toBeNull();

@@ -214,6 +214,23 @@ describe('server HTTP integration', () => {
     expect(get.body.approvals).toEqual({ [commitHash]: true });
   });
 
+  test('GET /api/state preserves revision order — UI depends on this to show latest first', async () => {
+    const revisions = [
+      { savedAt: '2024-01-01T00:00:00.000Z', patches: [{ hash: 'aaa', message: 'first' }] },
+      { savedAt: '2024-01-02T00:00:00.000Z', patches: [{ hash: 'bbb', message: 'second' }] },
+      { savedAt: '2024-01-03T00:00:00.000Z', patches: [{ hash: 'ccc', message: 'third' }] },
+    ];
+    await httpRequest(`${baseUrl}/api/state`, { method: 'POST', body: { revisions } });
+    const { status, body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(status).toBe(200);
+    expect(body.revisions).toHaveLength(3);
+    // Server must return revisions oldest-first; the UI reverses this for display
+    expect(body.revisions[0].savedAt).toBe('2024-01-01T00:00:00.000Z');
+    expect(body.revisions[2].savedAt).toBe('2024-01-03T00:00:00.000Z');
+    // Clean up
+    await httpRequest(`${baseUrl}/api/state`, { method: 'POST', body: { revisions: [] } });
+  });
+
   test('GET /api/filecontext returns real file lines', async () => {
     const shortHash = commitHash.slice(0, 8);
     const { status, body } = await httpRequest(

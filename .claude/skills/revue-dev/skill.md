@@ -19,9 +19,10 @@ Develop → Self-Review → Test → Agent Review → Commit → Push → (fix &
 **IMPORTANT: ALL steps are mandatory for every code change. Do not respond as done until commit and push are complete.**
 
 Project rules (from CLAUDE.md):
-- Every code change **must** include a corresponding test in the same response.
+- Every code change **must** include **both** types of tests:
+  - **`test/ui.test.js`** (Playwright) — verifies the feature renders correctly in a real browser page. Required for any UI/frontend change.
+  - **`test/integration.test.js`** (HTTP + file I/O) — verifies the server-side data contract that the UI depends on. Required for all changes, including pure frontend ones (e.g. if the UI displays revision order, add a server test that verifies the server returns revisions in the expected order).
 - **All tests must pass before committing.** A failing test is a hard blocker — fix it, do not skip or suppress.
-- **Always add integration tests when possible.** If the change touches `src/git.js`, `src/server.js`, or `bin/revue.js`, add or update a test in `test/integration.test.js` that exercises the real code path (real git commands, real HTTP, real file I/O — no mocks). Unit tests alone are not sufficient for server and git module changes.
 - If the change affects user-facing behavior or CLI flags, update README.md.
 
 ---

@@ -118,7 +118,6 @@ function setComment(patchHash, filePath, key, commentObj) {
   if (!state.comments[patchHash]) state.comments[patchHash] = {};
   if (!state.comments[patchHash][filePath]) state.comments[patchHash][filePath] = {};
   state.comments[patchHash][filePath][key] = commentObj;
-  updateSubmitButton();
   scheduleAutoSave();
 }
 
@@ -128,7 +127,6 @@ function deleteComment(patchHash, filePath, key) {
     delete byFile[filePath][key];
     if (Object.keys(byFile[filePath]).length === 0) delete byFile[filePath];
   }
-  updateSubmitButton();
   scheduleAutoSave();
 }
 
@@ -153,45 +151,30 @@ function getGeneralComment(patchHash) {
 
 function setGeneralComment(patchHash, text) {
   state.generalComments[patchHash] = text;
-  updateSubmitButton();
   scheduleAutoSave();
 }
 
 // ── Deny management ────────────────────────────────────────────────────────
+// Pure data mutators — callers are responsible for triggering re-renders.
 function denyPatch(hash) {
   state.denied.add(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
   scheduleAutoSave();
 }
 
 function undenyPatch(hash) {
   state.denied.delete(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
   scheduleAutoSave();
 }
 
 // ── Approve management ─────────────────────────────────────────────────────
+// Pure data mutators — callers are responsible for triggering re-renders.
 function approvePatch(hash) {
   state.approved.add(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
   scheduleAutoSave();
 }
 
 function unapprovePatch(hash) {
   state.approved.delete(hash);
-  renderTabs();
-  renderCurrentPatch();
-  updateSubmitButton();
-  refreshPromptBar();
   scheduleAutoSave();
 }
 
@@ -277,6 +260,7 @@ function showCommentForm(tr, patchHash, filePath, line, key) {
       text,
     };
     setComment(patchHash, filePath, key, commentObj);
+    updateSubmitButton();
     formRow.remove();
     renderCommentDisplay(tr, patchHash, filePath, line, key);
   });
@@ -310,6 +294,7 @@ function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
 
   displayRow.querySelector('.btn-delete-comment').addEventListener('click', () => {
     deleteComment(patchHash, filePath, key);
+    updateSubmitButton();
     displayRow.remove();
   });
 
@@ -419,6 +404,7 @@ function renderCommitMessageSection(container, patchHash, commitMessage, disable
       </div>`;
     commentEl.querySelector('.btn-delete-comment').addEventListener('click', () => {
       deleteComment(patchHash, COMMIT_FILE, COMMIT_KEY);
+      updateSubmitButton();
       refreshComment();
     });
     const body = commentEl.querySelector('.comment-body');
@@ -453,6 +439,7 @@ function renderCommitMessageSection(container, patchHash, commitMessage, disable
       setComment(patchHash, COMMIT_FILE, COMMIT_KEY, {
         patchHash, file: COMMIT_FILE, line: 0, lineContent: commitMessage, text,
       });
+      updateSubmitButton();
       formEl.innerHTML = '';
       refreshComment();
     });
@@ -714,20 +701,51 @@ function renderFile(fileData, patchHash) {
  *
  * Pure function — returns new Sets, does not mutate the inputs.
  */
+// Compute a fingerprint of a patch's actual changed lines (added/removed only,
+// not context).  Two patches with identical fingerprints have the same net code
+// change even if the commit hash or message differs.
+function diffFingerprint(patch) {
+  const lines = [];
+  for (const file of (patch.files || [])) {
+    for (const hunk of (file.hunks || [])) {
+      for (const line of hunk.lines) {
+        if (line.type !== 'context') lines.push(line.type[0] + line.content);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
 function migrateApprovals(prevPatches, currPatches, approved, denied) {
   const newApproved = new Set(approved);
   const newDenied   = new Set(denied);
   for (let i = 0; i < Math.min(prevPatches.length, currPatches.length); i++) {
-    const prevHash = prevPatches[i].hash;
-    const currHash = currPatches[i].hash;
-    if (prevHash === currHash) continue;
-    if (newApproved.has(prevHash)) {
-      newApproved.delete(prevHash);
-      newApproved.add(currHash);
-    }
-    if (newDenied.has(prevHash)) {
-      newDenied.delete(prevHash);
-      newDenied.add(currHash);
+    const prev = prevPatches[i];
+    const curr = currPatches[i];
+    if (prev.hash === curr.hash) continue;
+
+    // When both snapshots carry a diff fingerprint, use it to decide whether
+    // the actual code changed.  If only hashes differ (e.g. a commit-message
+    // amend or a rebase that didn't touch this patch) keep the decision.
+    // If both fingerprints are absent (old state file) fall back to the same
+    // keep-decision behaviour so we don't silently drop existing approvals.
+    const hasFp = prev.diffFingerprint !== undefined && curr.diffFingerprint !== undefined;
+    const diffChanged = hasFp && prev.diffFingerprint !== curr.diffFingerprint;
+
+    if (diffChanged) {
+      // Actual code changed — reviewer must re-evaluate
+      newApproved.delete(prev.hash);
+      newDenied.delete(prev.hash);
+    } else {
+      // Same diff (or no fingerprint to compare) — carry the decision forward
+      if (newApproved.has(prev.hash)) {
+        newApproved.delete(prev.hash);
+        newApproved.add(curr.hash);
+      }
+      if (newDenied.has(prev.hash)) {
+        newDenied.delete(prev.hash);
+        newDenied.add(curr.hash);
+      }
     }
   }
   return { approved: newApproved, denied: newDenied };
@@ -737,7 +755,11 @@ function detectRevisionChanges() {
   if (state.patches.length === 0) return;
 
   const lastRevision = state.revisions[state.revisions.length - 1];
-  const currentSnapshot = state.patches.map((p) => ({ hash: p.hash, message: p.message }));
+  const currentSnapshot = state.patches.map((p) => ({
+    hash: p.hash,
+    message: p.message,
+    diffFingerprint: diffFingerprint(p),
+  }));
 
   if (!lastRevision) {
     // First time — record baseline, nothing to compare against
@@ -1050,6 +1072,10 @@ function buildPatchEl(idx) {
     } else {
       approvePatch(patch.hash);
     }
+    renderTabs();
+    renderCurrentPatch();
+    updateSubmitButton();
+    refreshPromptBar();
   });
 
   const denyBtn = document.createElement('button');
@@ -1061,6 +1087,10 @@ function buildPatchEl(idx) {
     } else {
       denyPatch(patch.hash);
     }
+    renderTabs();
+    renderCurrentPatch();
+    updateSubmitButton();
+    refreshPromptBar();
   });
 
   btnGroup.appendChild(approveBtn);
@@ -1181,7 +1211,10 @@ function buildPatchEl(idx) {
 
   const textarea = generalBox.querySelector('textarea');
   if (isApproved) textarea.disabled = true;
-  textarea.addEventListener('input', () => setGeneralComment(patch.hash, textarea.value));
+  textarea.addEventListener('input', () => {
+    setGeneralComment(patch.hash, textarea.value);
+    updateSubmitButton();
+  });
 
   // Comments summary — lists all line-level and commit-message comments with scroll-to links
   const patchCommentsByFile = state.comments[patch.hash] || {};
@@ -1444,7 +1477,11 @@ async function submitReview() {
       setTimeout(() => { copyBtn.textContent = 'Copy prompt'; }, 2000);
     }).catch(() => {});  // silently ignore if clipboard access is denied
 
-    resetReviewState();
+    // Keep approved — patches already signed off on remain so across review
+    // cycles.  Only clear denied and feedback which are expected to change.
+    state.comments = {};
+    state.generalComments = {};
+    state.denied = new Set();
     await saveState();
 
     renderTabs();
@@ -1618,11 +1655,15 @@ async function initWorktreeBar() {
 // Fetches diff + state from the server and re-renders everything in-place.
 // Safe to call multiple times (worktree switch, manual refresh).
 async function loadAndRender() {
-  // Cancel any pending auto-save before resetting state.  Without this, a
-  // debounced save that was scheduled before the reload fires during the
-  // `await` below and writes the now-cleared state back to the server,
-  // losing any unsaved approvals/denials.
-  clearTimeout(saveTimer);
+  // Flush any pending auto-save before resetting state.  If we just cancel
+  // the timer, approvals made after the last successful save are silently
+  // lost when the user reloads before the 500 ms debounce fires.  Saving
+  // first ensures they land on disk and are restored below.
+  if (saveTimer !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    await saveState();
+  }
   // Reset ephemeral state before loading new worktree data
   resetReviewState();
   state.patches = [];
@@ -1755,7 +1796,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Allow unit tests to import pure helpers without loading the full browser app.
 if (typeof module !== 'undefined') {
   module.exports = {
-    migrateApprovals, renderDraftDisplay, removeExistingForm, showCommentForm,
+    diffFingerprint, migrateApprovals, renderDraftDisplay, removeExistingForm, showCommentForm,
     draftKey, drafts, state, renderFileNav, renderFile,
     getFileNavCollapsed: () => fileNavCollapsed,
     setFileNavCollapsed: (v) => { fileNavCollapsed = v; },

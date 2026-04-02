@@ -4,7 +4,7 @@
 global.document = { addEventListener: () => {} };
 global.fetch = () => {};
 
-const { migrateApprovals, submitReview } = require('../public/app');
+const { diffFingerprint, migrateApprovals, submitReview, state } = require('../public/app');
 
 // ── migrateApprovals ───────────────────────────────────────────────────────
 
@@ -110,6 +110,155 @@ describe('migrateApprovals', () => {
       expect(result.approved.has(h)).toBe(false);
       expect(result.denied.has(h)).toBe(false);
     });
+  });
+});
+
+// ── diffFingerprint ────────────────────────────────────────────────────────
+
+describe('diffFingerprint', () => {
+  function makePatch(lines) {
+    // lines: array of { type: 'added'|'removed'|'context', content: string }
+    return { files: [{ hunks: [{ lines }] }] };
+  }
+
+  test('returns empty string for patch with no files', () => {
+    expect(diffFingerprint({ files: [] })).toBe('');
+  });
+
+  test('excludes context lines', () => {
+    const patch = makePatch([
+      { type: 'context', content: 'unchanged' },
+      { type: 'added',   content: 'new line'  },
+    ]);
+    expect(diffFingerprint(patch)).toBe('anew line');
+  });
+
+  test('includes added and removed lines with type prefix', () => {
+    const patch = makePatch([
+      { type: 'removed', content: 'old' },
+      { type: 'added',   content: 'new' },
+    ]);
+    expect(diffFingerprint(patch)).toBe('rold\nanew');
+  });
+
+  test('same changed lines produce identical fingerprint', () => {
+    const lines = [{ type: 'added', content: 'x' }];
+    expect(diffFingerprint(makePatch(lines))).toBe(diffFingerprint(makePatch(lines)));
+  });
+
+  test('different changed lines produce different fingerprints', () => {
+    const p1 = makePatch([{ type: 'added', content: 'foo' }]);
+    const p2 = makePatch([{ type: 'added', content: 'bar' }]);
+    expect(diffFingerprint(p1)).not.toBe(diffFingerprint(p2));
+  });
+});
+
+// ── migrateApprovals — fingerprint-aware decisions ─────────────────────────
+
+describe('migrateApprovals — fingerprint-aware', () => {
+  function patch(hash, fp) {
+    return fp !== undefined ? { hash, diffFingerprint: fp } : { hash };
+  }
+
+  test('same fingerprint, different hash → approved migrated to new hash', () => {
+    const prev = [patch('old', 'fp1')];
+    const curr = [patch('new', 'fp1')];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('new')).toBe(true);
+    expect(result.approved.has('old')).toBe(false);
+  });
+
+  test('different fingerprint, different hash → approved cleared', () => {
+    const prev = [patch('old', 'fp1')];
+    const curr = [patch('new', 'fp2')];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('old')).toBe(false);
+    expect(result.approved.has('new')).toBe(false);
+  });
+
+  test('different fingerprint → denied cleared too', () => {
+    const prev = [patch('old', 'fp1')];
+    const curr = [patch('new', 'fp2')];
+    const result = migrateApprovals(prev, curr, new Set(), new Set(['old']));
+    expect(result.denied.has('old')).toBe(false);
+    expect(result.denied.has('new')).toBe(false);
+  });
+
+  test('no fingerprint on either side → falls back to hash migration', () => {
+    const prev = [{ hash: 'old' }];
+    const curr = [{ hash: 'new' }];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('new')).toBe(true);
+    expect(result.approved.has('old')).toBe(false);
+  });
+
+  test('fingerprint absent on prev only → falls back to hash migration', () => {
+    const prev = [{ hash: 'old' }];
+    const curr = [patch('new', 'fp1')];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('new')).toBe(true);
+  });
+});
+
+// ── submitReview — approved preserved, denied/comments cleared ─────────────
+
+describe('submitReview — state after submit', () => {
+  let elements;
+
+  function makeElement(overrides = {}) {
+    return { textContent: '', value: '', classList: { add: jest.fn() }, dataset: {}, ...overrides };
+  }
+
+  beforeEach(() => {
+    elements = {
+      '#result-feedback-path': makeElement(),
+      '#result-prompt':        makeElement(),
+      '#result-overlay':       makeElement({ classList: { add: jest.fn() } }),
+      '#btn-submit':           makeElement({ disabled: false }),
+      '#btn-copy-prompt':      makeElement(),
+      '#submit-warning':       makeElement(),
+    };
+    global.document = {
+      addEventListener: () => {},
+      querySelector: (sel) => elements[sel] || null,
+    };
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ feedbackPath: '/fake/REVIEW_FEEDBACK.md', prompt: 'prompt text' }),
+    });
+    global.navigator = { clipboard: { writeText: jest.fn().mockResolvedValue(undefined) } };
+
+    state.patches = [{ hash: 'abc123', message: 'fix: thing', files: [] }];
+    state.approved = new Set(['abc123']);
+    state.denied   = new Set(['def456']);
+    state.comments = { abc123: { 'file.js': { L1: { text: 'nit' } } } };
+    state.generalComments = { abc123: 'overall ok' };
+  });
+
+  afterEach(() => {
+    global.document = { addEventListener: () => {} };
+    delete global.navigator;
+    state.patches = [];
+    state.approved = new Set();
+    state.denied   = new Set();
+    state.comments = {};
+    state.generalComments = {};
+  });
+
+  test('approved state is preserved after generating prompt', async () => {
+    await submitReview();
+    expect(state.approved.has('abc123')).toBe(true);
+  });
+
+  test('denied state is cleared after generating prompt', async () => {
+    await submitReview();
+    expect(state.denied.size).toBe(0);
+  });
+
+  test('comments and generalComments are cleared after generating prompt', async () => {
+    await submitReview();
+    expect(state.comments).toEqual({});
+    expect(state.generalComments).toEqual({});
   });
 });
 

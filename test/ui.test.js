@@ -760,10 +760,10 @@ describe('update banner', () => {
 });
 
 // ── Approved status preserved despite pending auto-save on reload ──────────
-// loadAndRender() cancels the pending save timer before resetting state.
-// Without the cancel, a save scheduled by the last approve/deny fires during
-// loadAndRender's fetch await, writes cleared state (approved:[]) to the
-// server, and the reload loads back that empty list — losing the approval.
+// loadAndRender() flushes any pending auto-save before resetting state so
+// that unsaved approvals/denials land on disk and are restored after reload.
+// Previously the timer was just cancelled, which silently discarded changes
+// made in the 500 ms window before the user hit reload.
 
 describe('approved status preserved after reload (pending auto-save race)', () => {
   let racePage;
@@ -793,56 +793,43 @@ describe('approved status preserved after reload (pending auto-save race)', () =
     }
   });
 
-  test('pending auto-save is cancelled before state reset so server state is not corrupted', async () => {
-    // Approve the patch and wait for the auto-save to persist it to the server
+  test('approval made within 500 ms before reload is preserved (flush-before-reset)', async () => {
+    // Approve the patch but reload immediately — before the 500 ms debounce fires.
+    // The fix flushes the pending save before resetting state, so the server
+    // receives approved:[hash] and the patch stays approved after reload.
     await racePage.click('.btn-approve');
     await racePage.waitForSelector('.btn-unapprove', { timeout: 3000 });
-    await racePage.waitForTimeout(600); // 500ms debounce + 100ms margin → server has approved:[hash]
 
-    // Arm a route intercept that holds the next GET /api/state.  This stretches
-    // the race window: the reload fetch stalls while the pending save timer can fire.
-    let releaseGet;
-    let holdNextGet = false;
-    await racePage.route('**/api/state', async (route, request) => {
-      if (request.method() === 'POST') {
-        await route.continue();
-      } else if (holdNextGet) {
-        holdNextGet = false;
-        await new Promise((res) => { releaseGet = res; });
-        await route.continue();
-      } else {
-        await route.continue();
-      }
-    });
+    // Trigger reload within 500ms (no waitForTimeout) so the approval hasn't been saved yet
+    await racePage.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
+    await racePage.click('#btn-reload-page');
+    await racePage.waitForSelector('.patch-heading', { state: 'visible' });
+    await racePage.waitForTimeout(200);
 
-    try {
-      // Deny the patch to queue a new pending auto-save (fires 500ms from now).
-      // The server still has approved:[hash] from the save above.
-      await racePage.click('.btn-deny');
+    // The approval should have been flushed before the reset, so it survives the reload.
+    expect(await racePage.$('.btn-unapprove')).not.toBeNull();
+  });
 
-      // Arm the hold and trigger reload within 500ms of the deny — before the
-      // save timer fires.  Without the clearTimeout fix, the timer fires during
-      // the held GET with cleared state (approved:[], denied:[]) and corrupts
-      // the server's state file before the GET resolves.
-      holdNextGet = true;
-      await racePage.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
-      await racePage.click('#btn-reload-page');
+  test('pending deny flushed on reload — last intent wins, not last saved state', async () => {
+    // Approve and let it save to server
+    await racePage.click('.btn-unapprove'); // undo any prior approve
+    await racePage.waitForTimeout(600);
+    await racePage.click('.btn-approve');
+    await racePage.waitForSelector('.btn-unapprove', { timeout: 3000 });
+    await racePage.waitForTimeout(600); // server now has approved:[hash]
 
-      // Pause 600ms (500ms debounce + 100ms margin) so the save timer fires while the GET is held
-      await racePage.waitForTimeout(600);
+    // Deny the patch (pending save queued, not yet sent to server)
+    await racePage.click('.btn-deny');
+    await racePage.waitForSelector('.btn-undeny', { timeout: 3000 });
 
-      // Release the GET — loadAndRender can now finish loading
-      releaseGet?.();
-      await racePage.waitForSelector('.patch-heading', { state: 'visible' });
-      await racePage.waitForTimeout(200);
+    // Reload immediately — the flush-before-reset saves the deny to the server
+    await racePage.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
+    await racePage.click('#btn-reload-page');
+    await racePage.waitForSelector('.patch-heading', { state: 'visible' });
+    await racePage.waitForTimeout(200);
 
-      // The server's approved list should still be intact (from the save before
-      // the deny).  Without the fix the corrupt save overwrites it with [] and
-      // the patch no longer shows as approved.
-      expect(await racePage.$('.btn-unapprove')).not.toBeNull();
-    } finally {
-      await racePage.unroute('**/api/state');
-    }
+    // The deny should be preserved (flushed before reset), not the old approved state
+    expect(await racePage.$('.btn-undeny')).not.toBeNull();
   });
 });
 
@@ -1674,4 +1661,108 @@ describe('revision compare mode', () => {
     expect((await revCompPage.$$('.revision-toggle-bar')).length).toBe(1);
     expect(await revCompPage.$('.btn-compare-toggle')).not.toBeNull();
   });
+});
+
+// ── Approval persistence across reload — diff fingerprint ──────────────────
+// These tests exercise the core rule: approval survives a reload when the
+// diff content is unchanged (e.g. commit message amend, rebase), but is
+// cleared when the actual code changes.
+//
+// Uses a fresh isolated repo/server so git mutations don't affect other tests.
+
+describe('approval after reload — diff fingerprint', () => {
+  let fpTmpDir, fpMainPath, fpWorkPath;
+  let fpServer, fpBaseUrl;
+
+  beforeAll(async () => {
+    fpTmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), 'revue-fp-'));
+    fpMainPath = path.join(fpTmpDir, 'main');
+    fpWorkPath = path.join(fpTmpDir, 'work');
+
+    fs.mkdirSync(fpMainPath);
+    git(fpMainPath, 'init');
+    git(fpMainPath, 'config user.email "test@test.com"');
+    git(fpMainPath, 'config user.name "Test"');
+    fs.writeFileSync(path.join(fpMainPath, 'base.txt'), 'base\n');
+    git(fpMainPath, 'add .');
+    git(fpMainPath, 'commit -m "initial"');
+
+    execSync(`git clone "${fpMainPath}" "${fpWorkPath}"`, { encoding: 'utf8' });
+    git(fpWorkPath, 'config user.email "test@test.com"');
+    git(fpWorkPath, 'config user.name "Test"');
+
+    fs.writeFileSync(path.join(fpWorkPath, 'patch.js'), 'function foo() {\n  return 1;\n}\n');
+    git(fpWorkPath, 'add .');
+    git(fpWorkPath, 'commit -m "feat: add foo"');
+
+    const app = createApp({ worktreeName: 'work', worktreePath: fpWorkPath, mainRepoPath: fpMainPath });
+    const port = await findAvailablePort(19500);
+    await new Promise((resolve) => { fpServer = app.listen(port, '127.0.0.1', resolve); });
+    fpBaseUrl = `http://127.0.0.1:${port}`;
+  }, 30000);
+
+  afterAll(async () => {
+    await new Promise((resolve) => fpServer?.close(resolve));
+    fs.rmSync(fpTmpDir, { recursive: true, force: true });
+  });
+
+  async function openFpPage() {
+    const p = await browser.newPage();
+    await p.goto(fpBaseUrl);
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+    return p;
+  }
+
+  async function resetFpState(p) {
+    await p.request.post(`${fpBaseUrl}/api/state`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify({ comments: {}, generalComments: {}, approved: [], denied: [], revisions: [] }),
+    });
+    await p.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
+    await p.click('#btn-reload-page');
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+    await p.waitForTimeout(600); // let baseline auto-save settle
+  }
+
+  test('approval survives reload when only commit message changes (same diff)', async () => {
+    const p = await openFpPage();
+    await resetFpState(p);
+
+    await p.click('.btn-approve');
+    await p.waitForSelector('.btn-unapprove', { timeout: 3000 });
+    await p.waitForTimeout(600); // approval saved to disk
+
+    // Amend only the commit message — diff content unchanged
+    git(fpWorkPath, 'commit --amend -m "feat: add foo (refined message)"');
+
+    await p.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
+    await p.click('#btn-reload-page');
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+    await p.waitForTimeout(200);
+
+    expect(await p.$('.btn-unapprove')).not.toBeNull();
+    await p.close();
+  }, 15000);
+
+  test('approval cleared on reload when code is changed in the commit', async () => {
+    const p = await openFpPage();
+    await resetFpState(p);
+
+    await p.click('.btn-approve');
+    await p.waitForSelector('.btn-unapprove', { timeout: 3000 });
+    await p.waitForTimeout(600);
+
+    // Amend the commit with an actual code change
+    fs.appendFileSync(path.join(fpWorkPath, 'patch.js'), '// new line\n');
+    git(fpWorkPath, 'add patch.js');
+    git(fpWorkPath, 'commit --amend --no-edit');
+
+    await p.evaluate(() => { document.getElementById('update-banner').style.display = ''; });
+    await p.click('#btn-reload-page');
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+    await p.waitForTimeout(200);
+
+    expect(await p.$('.btn-approve')).not.toBeNull();
+    await p.close();
+  }, 15000);
 });

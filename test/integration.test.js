@@ -346,9 +346,9 @@ describe('server HTTP integration', () => {
     fs.unlinkSync(body.feedbackPath);
   });
 
-  test('state cleared via POST /api/state after submit is reflected in subsequent GET /api/state', async () => {
-    // Simulate having comments saved before submit
-    const priorState = { comments: { abc: { 'file.js': { L1: { text: 'nit' } } } }, generalComments: { abc: 'Overall ok' }, approved: ['abc'], denied: [] };
+  test('after submit, approved is preserved but denied/comments are cleared on disk', async () => {
+    // Simulate having comments and both approved and denied saved before submit
+    const priorState = { comments: { abc: { 'file.js': { L1: { text: 'nit' } } } }, generalComments: { abc: 'Overall ok' }, approved: [commitHash], denied: ['other'] };
     await httpRequest(`${baseUrl}/api/state`, { method: 'POST', body: priorState });
 
     // Submit generates the feedback file
@@ -359,19 +359,19 @@ describe('server HTTP integration', () => {
     });
     expect(submitRes.status).toBe(200);
 
-    // Client clears state on disk after successful submit
+    // Client keeps approved but clears denied/comments after successful submit
     const clearRes = await httpRequest(`${baseUrl}/api/state`, {
       method: 'POST',
-      body: { comments: {}, generalComments: {}, approved: [], denied: [] },
+      body: { comments: {}, generalComments: {}, approved: [commitHash], denied: [] },
     });
     expect(clearRes.status).toBe(200);
 
-    // Subsequent GET /api/state should return empty review state
+    // Subsequent GET /api/state: approved preserved, feedback cleared
     const { status, body } = await httpRequest(`${baseUrl}/api/state`);
     expect(status).toBe(200);
     expect(body.comments).toEqual({});
     expect(body.generalComments).toEqual({});
-    expect(body.approved).toEqual([]);
+    expect(body.approved).toEqual([commitHash]);
     expect(body.denied).toEqual([]);
 
     fs.unlinkSync(submitRes.body.feedbackPath);

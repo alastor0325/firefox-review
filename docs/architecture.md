@@ -1,36 +1,43 @@
 # Client-side architecture
 
-`public/app.js` is the entire browser-side application (~1 800 lines). This document describes its internal structure, the layering rules that keep it maintainable, and the conventions to follow when extending it.
+The browser-side application is split into five ES modules under `public/`. This document describes their structure, the layering rules that keep them maintainable, and the conventions to follow when extending them.
+
+## Files
+
+| File | Lines | Responsibility |
+|---|---|---|
+| `public/state.js` | ~110 | State object, pure mutators/accessors, draft cache, constants |
+| `public/persistence.js` | ~70 | `saveState`, `scheduleAutoSave`, `flushSave`, prompt bar data |
+| `public/revisions.js` | ~110 | `diffFingerprint`, `migrateApprovals`, `detectRevisionChanges`, `getRevisionList` |
+| `public/renderer.js` | ~900 | All DOM construction and event wiring |
+| `public/app.js` | ~300 | Orchestrators (`loadAndRender`, `submitReview`, `init`, `initWorktreeBar`, `startUpdatePolling`) + entry point |
 
 ## Layers
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   app.js (single file)               │
-│                                                      │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  Orchestrators                               │   │
-│  │  loadAndRender · submitReview · init         │   │
-│  │  initWorktreeBar · startUpdatePolling        │   │
-│  └──────┬──────────────┬───────────────┬───────┘   │
-│         │              │               │             │
-│  ┌──────▼──────┐  ┌────▼──────┐  ┌────▼──────┐    │
-│  │  Renderer   │  │Persistence│  │ Revisions │    │
-│  │  renderTabs │  │ saveState │  │diffFinger-│    │
-│  │  buildPatch │  │ scheduleA-│  │print      │    │
-│  │  El · file  │  │ utoSave   │  │migrateApp-│    │
-│  │  nav · etc. │  └────┬──────┘  │rovals     │    │
-│  └──────┬──────┘       │         └────┬──────┘    │
-│         │              │              │             │
-│  ┌──────▼──────────────▼──────────────▼──────┐    │
-│  │                  State                    │    │
-│  │  state · approvePatch · denyPatch         │    │
-│  │  setComment · deleteComment · etc.        │    │
-│  └───────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────┘
+app.js (orchestrators)
+  ├── renderer.js  ──► state.js
+  │                ──► persistence.js
+  │                ──► revisions.js
+  ├── persistence.js ──► state.js
+  ├── revisions.js   ──► state.js
+  │                  ──► persistence.js
+  └── state.js  (no imports)
 ```
 
 Arrows point **down** — a layer may only call into layers below it. The renderer reads state but never writes it. State mutators never call render functions.
+
+## Import graph
+
+```
+state.js        ← no imports (bottom of stack)
+persistence.js  ← imports state.js
+revisions.js    ← imports state.js, persistence.js
+renderer.js     ← imports state.js, persistence.js, revisions.js
+app.js          ← imports all four
+```
+
+This is a strict DAG. ES module semantics enforce it at parse time — any attempted cycle is a syntax error.
 
 ## The state layer
 
@@ -53,26 +60,25 @@ const state = {
 
 ### Mutator contract
 
-**State mutators are pure data operations.** They write to `state` and call `scheduleAutoSave()`, and nothing else:
+**State mutators are pure data operations.** They write to `state` only — no `scheduleAutoSave()`, no render calls:
 
 ```javascript
 // Correct:
-function approvePatch(hash) {
+export function approvePatch(hash) {
   state.approved.add(hash);
-  scheduleAutoSave();
 }
 
 // Wrong — never do this:
-function approvePatch(hash) {
+export function approvePatch(hash) {
   state.approved.add(hash);
-  renderTabs();          // ← violates the contract
-  updateSubmitButton();  // ← violates the contract
+  scheduleAutoSave();    // ← violates the contract (would require importing persistence.js)
+  renderTabs();          // ← violates the contract (would require importing renderer.js)
 }
 ```
 
-The caller is responsible for triggering any re-renders after a mutation. In practice, callers are always event handlers inside the renderer, which is the appropriate layer for scheduling DOM updates.
+The caller (always an event handler in `renderer.js`) is responsible for calling `scheduleAutoSave()` and triggering re-renders after a mutation.
 
-The reason this rule exists: if a mutator called a render function, and that render function imported from the state module in a future module split, you would get a circular dependency (`state → renderer → state`). Enforcing purity now keeps the dependency graph a strict DAG and makes the code testable without a DOM.
+This rule enforces the import DAG: `state.js` has no imports. If a mutator called `scheduleAutoSave()`, state.js would need to import persistence.js; if it called `renderTabs()`, it would need to import renderer.js — both would create a cycle since those modules already import state.js.
 
 ### Accessors
 
@@ -196,17 +202,6 @@ Two modes:
 
 Both modes are stored in `state.showRevision` and `state.compareRevision` (ephemeral — not persisted across reloads).
 
-## Module split roadmap
+## Test compatibility
 
-The file is currently monolithic for simplicity (single `<script>` tag, CommonJS test compat via `if (typeof module !== 'undefined')`). The layer boundaries described above are the intended split points for a future ES-module conversion:
-
-```
-public/
-  state.js        ← state object, pure mutators/accessors
-  persistence.js  ← saveState, scheduleAutoSave, resetReviewState
-  revisions.js    ← diffFingerprint, migrateApprovals, detectRevisionChanges
-  renderer.js     ← all DOM construction and event wiring
-  app.js          ← orchestrators, DOMContentLoaded entry point
-```
-
-Because mutators are already pure, `state.js` will have no imports at all. The only allowed import direction is downward through the stack shown in the diagram at the top of this document.
+`index.html` loads `app.js` as `<script type="module">`, so the browser runs native ES modules. Tests use Babel (`babel-jest`) with `@babel/preset-env` to convert `import`/`export` to CommonJS `require`/`module.exports` in the test environment only. This means `require('../public/app')` in test files resolves the full import chain transparently, and no test file paths need to change.

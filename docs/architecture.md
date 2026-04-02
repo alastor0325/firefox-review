@@ -8,9 +8,9 @@ The browser-side application is split into five ES modules under `public/`. This
 |---|---|---|
 | `public/state.js` | ~110 | State object, pure mutators/accessors, draft cache, constants |
 | `public/persistence.js` | ~70 | `saveState`, `scheduleAutoSave`, `flushSave`, prompt bar data |
-| `public/revisions.js` | ~110 | `diffFingerprint`, `migrateApprovals`, `detectRevisionChanges`, `getRevisionList` |
-| `public/renderer.js` | ~900 | All DOM construction and event wiring |
-| `public/app.js` | ~300 | Orchestrators (`loadAndRender`, `submitReview`, `init`, `initWorktreeBar`, `startUpdatePolling`) + entry point |
+| `public/revisions.js` | ~120 | `diffFingerprint`, `migrateApprovals`, `detectRevisionChanges`, `getRevisionList` |
+| `public/renderer.js` | ~1225 | All DOM construction and event wiring |
+| `public/app.js` | ~370 | Orchestrators (`loadAndRender`, `submitReview`, `init`, `initWorktreeBar`, `startUpdatePolling`) + entry point |
 
 ## Layers
 
@@ -88,7 +88,9 @@ Read-only helpers (`getComment`, `commentsForPatch`, `getGeneralComment`, `allPa
 
 `saveState` serialises `state.comments`, `state.generalComments`, `state.approved`, `state.denied`, and `state.revisions` to `/api/state` (a JSON file on disk).
 
-`scheduleAutoSave` debounces saves with a 500 ms timer. The timer is stored in the module-level `saveTimer` variable. `loadAndRender` **flushes** any pending save before resetting state, so approvals made in the 500 ms window are not silently lost on reload.
+`scheduleAutoSave` debounces saves with a 500 ms timer stored in the module-private `saveTimer`. `flushSave` cancels the timer and calls `saveState` immediately — used by `loadAndRender` before resetting state so approvals made within the debounce window are not silently lost on reload.
+
+`refreshPromptBar` shows or hides the current-prompt bar based on whether all patches are finished and a prompt text exists. It lives in persistence because it reads `savedPromptText`, which is persistence-private state.
 
 ## The revisions layer
 
@@ -123,7 +125,14 @@ Called once per `loadAndRender`. Compares the current patch list against the mos
 
 ## The renderer
 
-All DOM construction and mutation lives here. Key functions:
+All DOM construction and mutation lives in a single `renderer.js` (~1225 lines). It is intentionally kept as one file — the three conceptual sub-areas (comment UI, diff rendering, patch/tab/nav assembly) are tightly coupled through `buildPatchEl` and `renderFile`, so splitting them would introduce cross-imports without a clean boundary.
+
+Internal sub-areas (for navigation, not enforced as separate modules):
+- **Comment UI** — `showCommentForm`, `renderCommentDisplay`, `renderDraftDisplay`, `renderCommitMessageSection`
+- **Diff rendering** — `renderFile`, `renderExpandRow`, `countStats`
+- **Patch/tab/nav assembly** — `buildPatchEl`, `renderCurrentPatch`, `initPatchNodes`, `renderTabs`, `switchPatch`, `buildNavItemsEl`, `activateFileNav`
+
+Key functions:
 
 | Function | Responsibility |
 |---|---|
@@ -136,7 +145,6 @@ All DOM construction and mutation lives here. Key functions:
 | `buildNavItemsEl(files, diffWrap)` | Builds the file-nav items element (detached). |
 | `activateFileNav(navItemsEl, diffWrap)` | Swaps in a pre-built nav items element and attaches the scroll highlight handler. |
 | `updateSubmitButton()` | Enables/disables the Generate button based on current activity. |
-| `refreshPromptBar()` | Shows/hides the current-prompt bar based on whether all patches are finished and a prompt exists. |
 
 ### Patch element lifecycle
 

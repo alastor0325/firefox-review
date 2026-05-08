@@ -447,6 +447,17 @@ describe('server HTTP integration', () => {
     expect(status).toBe(404);
     expect(body.error).toMatch(/deadbeef1234/);
   });
+
+  // The sidebar's sticky offset is driven by the --top-bar-height custom
+  // property declared in style.css. If the served CSS ever lacks the variable
+  // reference, the sidebar would silently revert to the buggy `top: 0`
+  // behavior under the top bar.
+  test('GET /style.css ships the --top-bar-height-driven sidebar offset', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/style.css`);
+    expect(status).toBe(200);
+    expect(body).toMatch(/#file-nav\s*{[^}]*top:\s*var\(--top-bar-height/);
+    expect(body).toMatch(/max-height:\s*calc\(100vh\s*-\s*var\(--top-bar-height/);
+  });
 });
 
 // ── startServer lifecycle ─────────────────────────────────────────────────

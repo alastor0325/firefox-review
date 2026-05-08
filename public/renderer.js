@@ -611,8 +611,38 @@ export function switchPatch(idx) {
 }
 
 // ── File navigation sidebar ─────────────────────────────────────────────────
+const TOP_BAR_HEIGHT_VAR = '--top-bar-height';
 let fileNavScrollHandler = null;
 let fileNavCollapsed = false;
+let _stickyOffsetSetup = false;
+let _topBarHeight = 0;
+
+// Why this exists: web-font swap-in (Space Grotesk) and dynamic top-bar
+// children (update banner, prompt bar) change #top-bar's height after first
+// paint. The sidebar's sticky offset (style.css) tracks the resulting value
+// via --top-bar-height, and updateActive() reads the cached _topBarHeight to
+// avoid forcing layout on every scroll event.
+export function setupStickySidebarOffset() {
+  if (_stickyOffsetSetup) return;
+  _stickyOffsetSetup = true;
+
+  const topBar = $('#top-bar');
+  if (!topBar) return;
+
+  const sync = () => {
+    const h = Math.ceil(topBar.getBoundingClientRect().height);
+    if (h === _topBarHeight) return;
+    _topBarHeight = h;
+    document.documentElement.style.setProperty(TOP_BAR_HEIGHT_VAR, h + 'px');
+  };
+
+  sync();
+
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(sync).observe(topBar);
+  }
+  document.fonts?.ready?.then(sync);
+}
 
 // Builds the file-nav items element for a patch. Pure DOM construction,
 // no layout reads — safe to call while the patch is still detached / hidden.
@@ -665,8 +695,7 @@ export function buildNavItemsEl(files, diffWrap) {
     item.addEventListener('click', () => {
       if (!block) return;
       navItems.forEach((ni, i) => ni.classList.toggle('active', i === idx));
-      const topH = ($('#top-bar') || {}).offsetHeight || 0;
-      const y = block.getBoundingClientRect().top + window.scrollY - topH - 8;
+      const y = block.getBoundingClientRect().top + window.scrollY - _topBarHeight - 8;
       window.scrollTo({ top: y, behavior: 'smooth' });
     });
 
@@ -695,10 +724,6 @@ export function activateFileNav(navItemsEl, diffWrap) {
     nav.style.display = 'none';
     return;
   }
-
-  const topBarH = ($('#top-bar') || {}).offsetHeight || 0;
-  nav.style.top = topBarH + 'px';
-  nav.style.maxHeight = `calc(100vh - ${topBarH}px)`;
 
   // Build or reuse nav header
   let header = nav.querySelector('.file-nav-header');
@@ -737,7 +762,7 @@ export function activateFileNav(navItemsEl, diffWrap) {
     let activeIdx = 0;
     for (let i = 0; i < blocks.length; i++) {
       const rect = blocks[i].getBoundingClientRect();
-      if (rect.top <= topBarH + 32) activeIdx = i;
+      if (rect.top <= _topBarHeight + 32) activeIdx = i;
     }
     navItems.forEach((item, i) => item.classList.toggle('active', i === activeIdx));
     const activeItem = navItems[activeIdx];
@@ -1221,5 +1246,6 @@ if (typeof module !== 'undefined') {
     buildPatchEl, renderCurrentPatch, initPatchNodes,
     addDragScroll, initTabsDragScroll,
     getFileNavCollapsed, setFileNavCollapsed,
+    setupStickySidebarOffset,
   };
 }

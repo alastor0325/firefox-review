@@ -286,11 +286,14 @@ body {
 }
 
 /* ── File nav sidebar ── */
+/* --top-bar-height is kept in sync by setupStickySidebarOffset() in renderer.js. */
 #file-nav {
   width: 220px;
   flex-shrink: 0;
+  align-self: flex-start;
   position: sticky;
-  top: 0;
+  top: var(--top-bar-height, 0px);
+  max-height: calc(100vh - var(--top-bar-height, 0px));
   overflow-y: auto;
   border-right: 1px solid #30363d;
   background: #0d1117;

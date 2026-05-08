@@ -182,6 +182,42 @@ describe('sidebar', () => {
     await page.waitForFunction(() => !document.querySelector('#file-nav')?.classList.contains('collapsed'));
     expect(await page.$eval('#file-nav', (el) => el.classList.contains('collapsed'))).toBe(false);
   });
+
+  // Regression: when top-bar height changes after the initial render (e.g.
+  // web-font swap, banner toggle, viewport resize), the sticky sidebar must
+  // re-anchor to the new top-bar height instead of remaining at the stale
+  // offset captured at first paint.
+  test('sidebar top tracks top-bar height when banner appears', async () => {
+    const stickyPage = await openFreshPage();
+    try {
+      const initial = await stickyPage.evaluate(() => ({
+        topBar: Math.ceil(document.getElementById('top-bar').getBoundingClientRect().height),
+        nav: Math.round(document.getElementById('file-nav').getBoundingClientRect().top),
+      }));
+      expect(initial.nav).toBe(initial.topBar);
+
+      await stickyPage.evaluate(() => {
+        document.getElementById('update-banner').style.display = '';
+      });
+
+      await stickyPage.waitForFunction((before) => {
+        const cur = Math.ceil(document.getElementById('top-bar').getBoundingClientRect().height);
+        if (cur <= before) return false;
+        const cssVar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top-bar-height'));
+        return cssVar === cur;
+      }, initial.topBar);
+
+      const after = await stickyPage.evaluate(() => ({
+        topBar: Math.ceil(document.getElementById('top-bar').getBoundingClientRect().height),
+        nav: Math.round(document.getElementById('file-nav').getBoundingClientRect().top),
+      }));
+
+      expect(after.topBar).toBeGreaterThan(initial.topBar);
+      expect(after.nav).toBe(after.topBar);
+    } finally {
+      await stickyPage.close();
+    }
+  });
 });
 
 // ── Diff rendering ──────────────────────────────────────────────────────────

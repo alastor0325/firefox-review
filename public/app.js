@@ -10,6 +10,7 @@ import {
   renderDraftDisplay, renderCommitMessageSection, renderFileNav, renderFile,
   renderTabs, switchPatch, buildPatchEl, renderCurrentPatch, initPatchNodes,
   addDragScroll, initTabsDragScroll, getFileNavCollapsed, setFileNavCollapsed,
+  setupStickySidebarOffset,
 } from './renderer.js';
 
 // ── DOM helpers ────────────────────────────────────────────────────────────
@@ -270,6 +271,7 @@ async function loadAndRender() {
 }
 
 async function init() {
+  setupStickySidebarOffset();
   updateSubmitButton();
 
   $('#btn-submit').addEventListener('click', submitReview);

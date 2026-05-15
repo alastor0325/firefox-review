@@ -34,6 +34,21 @@ async function openFreshPage() {
   return p;
 }
 
+// Reset the shared REVIEW_STATE file so the page starts from a clean slate.
+// Must wait for the page's first auto-save (scheduled by detectRevisionChanges
+// on load) to settle, otherwise that pending save races with our POST and
+// overwrites it via loadAndRender's flushSave during the reload below.
+async function resetSharedState(p) {
+  await p.waitForTimeout(600);
+  await p.request.post(`${baseUrl}/api/state`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: JSON.stringify({ comments: {}, generalComments: {}, approved: [], denied: [], drafts: {}, revisions: [] }),
+  });
+  await p.reload();
+  await p.waitForSelector('.patch-heading', { state: 'visible' });
+  await p.waitForTimeout(600);
+}
+
 beforeAll(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'revue-ui-'));
   mainRepoPath = path.join(tmpDir, 'main-repo');
@@ -1432,7 +1447,10 @@ describe('current-prompt-bar appears after all patches reviewed and submitted', 
 describe('inline comment edit — re-open shows original text', () => {
   let editPage;
 
-  beforeAll(async () => { editPage = await openFreshPage(); }, 15000);
+  beforeAll(async () => {
+    editPage = await openFreshPage();
+    await resetSharedState(editPage);
+  }, 15000);
   afterAll(async () => { await editPage?.close(); });
 
   test('save a line comment then click its body to re-open the form pre-filled', async () => {
@@ -1475,7 +1493,10 @@ describe('inline comment edit — re-open shows original text', () => {
 describe('draft comment persistence in memory', () => {
   let draftPage;
 
-  beforeAll(async () => { draftPage = await openFreshPage(); }, 15000);
+  beforeAll(async () => {
+    draftPage = await openFreshPage();
+    await resetSharedState(draftPage);
+  }, 15000);
   afterAll(async () => { await draftPage?.close(); });
 
   test('canceling after typing shows a .comment-draft-row with the draft text', async () => {
@@ -1508,7 +1529,10 @@ describe('draft comment persistence in memory', () => {
 describe('general comment textarea disabled when patch is approved', () => {
   let approvedPage;
 
-  beforeAll(async () => { approvedPage = await openFreshPage(); }, 15000);
+  beforeAll(async () => {
+    approvedPage = await openFreshPage();
+    await resetSharedState(approvedPage);
+  }, 15000);
   afterAll(async () => { await approvedPage?.close(); });
 
   test('textarea is enabled before approval', async () => {
@@ -1621,6 +1645,10 @@ describe('copy prompt button changes label to "Copied!"', () => {
     });
     await copyPage.goto(baseUrl);
     await copyPage.waitForSelector('.patch-heading', { state: 'visible' });
+
+    // Earlier describes may have left state on disk with patches approved;
+    // that disables the general-comment textarea and breaks the fill below.
+    await resetSharedState(copyPage);
 
     await copyPage.fill('.general-comment-textarea', 'Copy prompt test.');
     await copyPage.waitForFunction(() => !document.querySelector('#btn-submit').disabled);
@@ -1819,6 +1847,10 @@ describe('approval after reload — diff fingerprint', () => {
   }
 
   async function resetFpState(p) {
+    // Wait for the page's first auto-save (scheduled by detectRevisionChanges
+    // on load) to settle; otherwise the loadAndRender triggered by the reload
+    // click below will flushSave the stale in-memory state, overwriting our POST.
+    await p.waitForTimeout(600);
     await p.request.post(`${fpBaseUrl}/api/state`, {
       headers: { 'Content-Type': 'application/json' },
       data: JSON.stringify({ comments: {}, generalComments: {}, approved: [], denied: [], revisions: [] }),

@@ -1,10 +1,9 @@
 ---
-name: dev
 description: >
   Development loop for the revue project: implement a change, self-review the diff,
   run tests, spawn an agent review (simplify), commit, and push. ALL steps are mandatory.
   Use for any feature or bug fix in this repo.
-  Triggers on: "dev loop", "/dev", "implement and test", "start dev loop".
+  Triggers on: "dev loop", "/dev", "/revue-dev", "implement and test", "start dev loop".
 allowed-tools: [Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion]
 ---
 

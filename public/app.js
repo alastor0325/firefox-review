@@ -1,7 +1,7 @@
 // State: direct access for orchestration
-import { state, drafts, draftKey, resetReviewState, commentsForPatch, getGeneralComment } from './state.js';
+import { state, drafts, draftKey, resetReviewState, replaceDrafts, commentsForPatch, getGeneralComment } from './state.js';
 // Persistence: save/restore + prompt bar
-import { flushSave, saveState, updateCurrentPrompt, refreshPromptBar, setSavedPromptText } from './persistence.js';
+import { flushSave, saveState, updateCurrentPrompt, refreshPromptBar, setSavedPromptText, initStateChannel, hasPendingSave } from './persistence.js';
 // Revisions: detect changes on load
 import { diffFingerprint, migrateApprovals, detectRevisionChanges } from './revisions.js';
 // Renderer: all DOM functions + re-exportable items for tests
@@ -64,11 +64,11 @@ async function submitReview() {
       setTimeout(() => { copyBtn.textContent = 'Copy prompt'; }, 2000);
     }).catch(() => {});  // silently ignore if clipboard access is denied
 
-    // Keep approved — patches already signed off on remain so across review
-    // cycles.  Only clear denied and feedback which are expected to change.
+    // Refresh must preserve drafts; only "Generate Review Prompt" clears them.
     state.comments = {};
     state.generalComments = {};
     state.denied = new Set();
+    replaceDrafts(null);
     await saveState();
 
     renderTabs();
@@ -238,15 +238,7 @@ async function loadAndRender() {
     const data = await diffRes.json();
     if (!diffRes.ok) throw new Error(data.error || 'Failed to load diff');
 
-    if (stateRes.ok) {
-      const saved = await stateRes.json();
-      if (saved.comments) state.comments = saved.comments;
-      if (saved.generalComments) state.generalComments = saved.generalComments;
-      if (saved.approved) state.approved = new Set(saved.approved);
-      if (saved.denied) state.denied = new Set(saved.denied);
-      if (saved.prompt) setSavedPromptText(saved.prompt);
-      if (saved.revisions) state.revisions = saved.revisions;
-    }
+    if (stateRes.ok) applySavedState(await stateRes.json());
 
     state.patches = data.patches || [];
     state.currentPatchIdx = 0;
@@ -263,11 +255,39 @@ async function loadAndRender() {
     initPatchNodes();
     updateSubmitButton();
     refreshPromptBar();
+
+    initStateChannel(data.worktreeName, syncFromRemote);
   } catch (err) {
     loading.style.display = 'none';
     errorMsg.style.display = '';
     errorMsg.textContent = `Error loading diff: ${err.message}`;
   }
+}
+
+function applySavedState(saved) {
+  if (!saved) return;
+  if (saved.comments) state.comments = saved.comments;
+  if (saved.generalComments) state.generalComments = saved.generalComments;
+  if (saved.approved) state.approved = new Set(saved.approved);
+  if (saved.denied) state.denied = new Set(saved.denied);
+  if (saved.revisions) state.revisions = saved.revisions;
+  if (saved.prompt) setSavedPromptText(saved.prompt);
+  replaceDrafts(saved.drafts || null);
+}
+
+// Skip if we have a pending save of our own — our save will broadcast next and
+// the other tab will catch up then.  Last-write-wins for true conflicts.
+async function syncFromRemote() {
+  if (hasPendingSave()) return;
+  try {
+    const res = await fetch('/api/state');
+    if (!res.ok) return;
+    applySavedState(await res.json());
+    renderTabs();
+    initPatchNodes();
+    updateSubmitButton();
+    refreshPromptBar();
+  } catch { /* network blip — next broadcast will retry */ }
 }
 
 async function init() {

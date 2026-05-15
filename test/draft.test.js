@@ -188,3 +188,38 @@ describe('draft row restored when form is closed', () => {
     expect(tr.nextElementSibling).toBeNull();
   });
 });
+
+// ── Draft auto-save: typing in textarea triggers POST /api/state ──────────
+// The textarea input handler must call scheduleAutoSave so drafts persist
+// across page reload. Without this, drafts live in JS memory only.
+
+describe('typing in a comment textarea auto-saves drafts', () => {
+  jest.useFakeTimers();
+
+  beforeEach(() => {
+    global.fetch.mockReset();
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+  });
+
+  afterAll(() => { jest.useRealTimers(); });
+
+  test('typing in a line-comment textarea POSTs drafts to /api/state', () => {
+    const tr = setupTr();
+    showCommentForm(tr, HASH, FILE, LINE, KEY);
+
+    const textarea = tr.nextElementSibling.querySelector('textarea');
+    textarea.value = 'typed draft';
+    textarea.dispatchEvent(new Event('input'));
+
+    // 500ms debounce in scheduleAutoSave
+    jest.advanceTimersByTime(600);
+
+    expect(global.fetch).toHaveBeenCalled();
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/state');
+    expect(opts.method).toBe('POST');
+    const body = JSON.parse(opts.body);
+    expect(body.drafts).toBeDefined();
+    expect(body.drafts[dk()]).toBe('typed draft');
+  });
+});

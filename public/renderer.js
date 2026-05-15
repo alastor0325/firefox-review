@@ -82,7 +82,10 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
   textarea.value = existing ? existing.text : (drafts[dk] || '');
   textarea.focus();
 
-  textarea.addEventListener('input', () => { drafts[dk] = textarea.value; });
+  textarea.addEventListener('input', () => {
+    drafts[dk] = textarea.value;
+    scheduleAutoSave();
+  });
 
   formRow.querySelector('.btn-cancel').addEventListener('click', () => {
     formRow.remove();
@@ -91,6 +94,7 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
 
   formRow.querySelector('.btn-discard').addEventListener('click', () => {
     delete drafts[dk];
+    scheduleAutoSave();
     formRow.remove();
   });
 
@@ -275,9 +279,17 @@ export function renderCommitMessageSection(container, patchHash, commitMessage, 
     const ta = formEl.querySelector('textarea');
     ta.value = existing ? existing.text : (drafts[dk] || '');
     ta.focus();
-    ta.addEventListener('input', () => { drafts[dk] = ta.value; });
+    ta.addEventListener('input', () => {
+      drafts[dk] = ta.value;
+      scheduleAutoSave();
+    });
     formEl.querySelector('.btn-cancel').addEventListener('click', () => { formEl.innerHTML = ''; refreshComment(); });
-    formEl.querySelector('.btn-discard').addEventListener('click', () => { delete drafts[dk]; formEl.innerHTML = ''; });
+    formEl.querySelector('.btn-discard').addEventListener('click', () => {
+      delete drafts[dk];
+      scheduleAutoSave();
+      formEl.innerHTML = '';
+      refreshComment();
+    });
     formEl.querySelector('.btn-save').addEventListener('click', () => {
       const text = ta.value.trim();
       if (!text) return;

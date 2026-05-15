@@ -377,6 +377,30 @@ describe('server HTTP integration', () => {
     fs.unlinkSync(submitRes.body.feedbackPath);
   });
 
+  test('POST /api/state round-trips drafts so refresh restores unsaved comment text', async () => {
+    // Drafts are unsaved comment textarea contents — they must persist to disk
+    // so a page reload (or a second tab) sees them, not get wiped.
+    const drafts = {
+      [`${commitHash}/feature.js/n1`]: 'WIP: this name is unclear',
+      [`${commitHash}/__commit__/msg`]: 'WIP: needs a bug link',
+    };
+    const postRes = await httpRequest(`${baseUrl}/api/state`, {
+      method: 'POST',
+      body: { comments: {}, generalComments: {}, approved: [], denied: [], drafts },
+    });
+    expect(postRes.status).toBe(200);
+
+    const { status, body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(status).toBe(200);
+    expect(body.drafts).toEqual(drafts);
+
+    // Clean up so subsequent tests start from a known state
+    await httpRequest(`${baseUrl}/api/state`, {
+      method: 'POST',
+      body: { comments: {}, generalComments: {}, approved: [], denied: [], drafts: {} },
+    });
+  });
+
   test('GET /api/state returns prompt from existing REVIEW_FEEDBACK MD file', async () => {
     const mdPath = path.join(workRepoPath, 'REVIEW_FEEDBACK_work-repo.md');
     fs.writeFileSync(mdPath, 'pre-existing review prompt', 'utf8');

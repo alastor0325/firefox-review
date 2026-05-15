@@ -25,6 +25,13 @@ export function draftKey(patchHash, filePath, key) {
   return `${patchHash}/${filePath}/${key}`;
 }
 
+// Replace drafts in-place — module-level identity must be preserved so other
+// modules holding the import keep seeing live updates.
+export function replaceDrafts(next) {
+  for (const k of Object.keys(drafts)) delete drafts[k];
+  if (next) Object.assign(drafts, next);
+}
+
 export function resetReviewState() {
   state.comments = {};
   state.generalComments = {};

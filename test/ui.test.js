@@ -1871,3 +1871,178 @@ describe('approval after reload — diff fingerprint', () => {
     await p.close();
   }, 15000);
 });
+
+// ── Draft persistence and multi-tab sync ──────────────────────────────────
+// Drafts (unsaved comment textarea text) must survive page reload, and a stale
+// background tab must not clobber a comment saved in another tab.
+
+describe('draft persistence and multi-tab sync', () => {
+  let dpTmpDir, dpMainPath, dpWorkPath;
+  let dpServer, dpBaseUrl, dpContext;
+
+  beforeAll(async () => {
+    dpTmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), 'revue-draft-'));
+    dpMainPath = path.join(dpTmpDir, 'main');
+    dpWorkPath = path.join(dpTmpDir, 'work');
+
+    fs.mkdirSync(dpMainPath);
+    git(dpMainPath, 'init');
+    git(dpMainPath, 'config user.email "test@test.com"');
+    git(dpMainPath, 'config user.name "Test"');
+    fs.writeFileSync(path.join(dpMainPath, 'base.txt'), 'base\n');
+    git(dpMainPath, 'add .');
+    git(dpMainPath, 'commit -m "initial"');
+
+    execSync(`git clone "${dpMainPath}" "${dpWorkPath}"`, { encoding: 'utf8' });
+    git(dpWorkPath, 'config user.email "test@test.com"');
+    git(dpWorkPath, 'config user.name "Test"');
+
+    fs.writeFileSync(path.join(dpWorkPath, 'sample.js'), 'function foo() {\n  return 1;\n}\n');
+    git(dpWorkPath, 'add .');
+    git(dpWorkPath, 'commit -m "feat: add foo"');
+
+    const app = createApp({ worktreeName: 'work', worktreePath: dpWorkPath, mainRepoPath: dpMainPath });
+    const port = await findAvailablePort(19600);
+    await new Promise((resolve) => { dpServer = app.listen(port, '127.0.0.1', resolve); });
+    dpBaseUrl = `http://127.0.0.1:${port}`;
+
+    // Single context so two pages share BroadcastChannel + storage (multi-tab scenario)
+    dpContext = await browser.newContext();
+  }, 30000);
+
+  afterAll(async () => {
+    await dpContext?.close();
+    await new Promise((resolve) => dpServer?.close(resolve));
+    fs.rmSync(dpTmpDir, { recursive: true, force: true });
+  });
+
+  async function openDpPage() {
+    const p = await dpContext.newPage();
+    await p.goto(dpBaseUrl);
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+    return p;
+  }
+
+  async function resetDpState(p) {
+    await p.request.post(`${dpBaseUrl}/api/state`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: JSON.stringify({ comments: {}, generalComments: {}, approved: [], denied: [], drafts: {}, revisions: [] }),
+    });
+    await p.reload();
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+  }
+
+  test('per-line draft survives page reload', async () => {
+    const p = await openDpPage();
+    await resetDpState(p);
+
+    await p.click('.line-added .ln-content');
+    await p.waitForSelector('.comment-form-row textarea');
+    // Use type() so the input event fires (fill() may bypass per-key input events for non-debounced UIs)
+    await p.locator('.comment-form-row textarea').type('WIP draft text');
+    await p.waitForTimeout(700); // 500ms debounce + buffer
+
+    await p.reload();
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+
+    await p.waitForSelector('.comment-draft-row');
+    expect(await p.textContent('.comment-draft-row .comment-body')).toContain('WIP draft text');
+    await p.close();
+  }, 20000);
+
+  test('commit-message draft survives page reload', async () => {
+    const p = await openDpPage();
+    await resetDpState(p);
+
+    await p.click('.commit-msg-subject');
+    await p.waitForSelector('.comment-form-inner textarea');
+    await p.locator('.comment-form-inner textarea').type('WIP commit msg draft');
+    await p.waitForTimeout(700);
+
+    await p.reload();
+    await p.waitForSelector('.patch-heading', { state: 'visible' });
+
+    await p.waitForSelector('.comment-draft-row');
+    expect(await p.textContent('.comment-draft-row .comment-body')).toContain('WIP commit msg draft');
+    await p.close();
+  }, 20000);
+
+  test('Generate Review Prompt clears drafts from disk', async () => {
+    const p = await openDpPage();
+    await resetDpState(p);
+
+    // Save a real comment so submit is enabled
+    await p.click('.line-added .ln-content');
+    await p.waitForSelector('.comment-form-row textarea');
+    await p.fill('.comment-form-row textarea', 'real comment');
+    await p.click('.btn-save');
+    await p.waitForSelector('.comment-display-row');
+
+    // Open commit-message form and type a draft (do NOT click Save)
+    await p.click('.commit-msg-subject');
+    await p.waitForSelector('.comment-form-inner textarea');
+    await p.locator('.comment-form-inner textarea').type('WIP to be cleared');
+    await p.waitForTimeout(700); // draft auto-saved to disk
+
+    // Sanity: draft is on disk before submit
+    let state = await p.request.get(`${dpBaseUrl}/api/state`).then((r) => r.json());
+    expect(Object.values(state.drafts || {}).some((v) => v.includes('WIP to be cleared'))).toBe(true);
+
+    await p.click('#btn-submit');
+    await p.waitForSelector('#result-overlay.visible', { timeout: 10000 });
+    await p.click('#btn-close-modal');
+    await p.waitForTimeout(700);
+
+    state = await p.request.get(`${dpBaseUrl}/api/state`).then((r) => r.json());
+    expect(state.drafts || {}).toEqual({});
+    await p.close();
+  }, 25000);
+
+  test('saved comment in tab A appears in tab B without manual reload', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage(); // opens after reset, sees clean state
+
+    await pageA.click('.line-added .ln-content');
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A says hi');
+    await pageA.click('.btn-save');
+    await pageA.waitForSelector('.comment-display-row');
+
+    await pageB.waitForSelector('.comment-display-row', { timeout: 5000 });
+    expect(await pageB.textContent('.comment-display-row .comment-body')).toBe('A says hi');
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
+  test('stale tab does not clobber a saved comment from another tab', async () => {
+    // Regression test: without sync, tab B's stale in-memory state would
+    // overwrite tab A's saved comment when B triggers any auto-save
+    // (approve, deny, type, etc.).
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    await pageA.click('.line-added .ln-content');
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A saved this');
+    await pageA.click('.btn-save');
+    await pageA.waitForSelector('.comment-display-row');
+    await pageA.waitForTimeout(800); // give broadcast + B's refetch time to land
+
+    // B does an innocuous auto-saving action
+    await pageB.click('.btn-approve');
+    await pageB.waitForSelector('.btn-unapprove');
+    await pageB.waitForTimeout(800);
+
+    const state = await pageA.request.get(`${dpBaseUrl}/api/state`).then((r) => r.json());
+    const allComments = Object.values(state.comments).flatMap((byFile) =>
+      Object.values(byFile).flatMap((byKey) => Object.values(byKey))
+    );
+    expect(allComments.find((c) => c.text === 'A saved this')).toBeTruthy();
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+});

@@ -4,7 +4,7 @@
 global.document = { addEventListener: () => {} };
 global.fetch = () => {};
 
-const { diffFingerprint, migrateApprovals, submitReview, state } = require('../public/app');
+const { diffFingerprint, migrateApprovals, submitReview, state, drafts } = require('../public/app');
 
 // ── migrateApprovals ───────────────────────────────────────────────────────
 
@@ -259,6 +259,13 @@ describe('submitReview — state after submit', () => {
     await submitReview();
     expect(state.comments).toEqual({});
     expect(state.generalComments).toEqual({});
+  });
+
+  test('drafts are cleared after generating prompt — refresh must NOT clear them, only submit does', async () => {
+    drafts['abc123/file.js/n1'] = 'WIP draft text';
+    drafts['abc123/__commit__/msg'] = 'WIP commit draft';
+    await submitReview();
+    expect(Object.keys(drafts)).toHaveLength(0);
   });
 });
 

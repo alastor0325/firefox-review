@@ -70,9 +70,10 @@ The server defaults to port `7777` and increments automatically if that port is 
 
 - **File nav sidebar** — lists changed files with `+`/`-` counts; click to jump, highlights current file on scroll
 - **Per-patch tabs** — one tab per commit; badges show comment count `✓` approval `✗` denial `↑` amended
-- **Inline comments** — click any diff line or commit message to annotate; drafts are preserved if you close the form
+- **Inline comments** — click any diff line or commit message to annotate; drafts persist across page reloads and only clear when you click "Generate Review Prompt"
 - **Approve / Deny** — mark each patch; denied patches always appear in the generated prompt even without comments
 - **Approval persistence** — approved patches stay approved across reloads and after "Generate Review Prompt"; approvals survive rebases and commit-message amends (same code = same approval); only actual code changes clear an approval
+- **Multi-tab sync** — open the same worktree in two browser tabs and they stay in sync via BroadcastChannel; a save in one tab is picked up by the other without manual reload, so a stale tab can't overwrite saved comments
 - **Revision detection** — if commits are amended, a revision bar lets you compare old vs new diffs
 - **Generate Review Prompt** — writes `REVIEW_FEEDBACK_<worktree>.md` and copies the prompt to clipboard; review state auto-saves to `REVIEW_STATE_<worktree>.json`
 

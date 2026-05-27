@@ -59,6 +59,41 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
   let patchesCache = null;
   let cachedHeadHash = null;
 
+  // ── Per-worktree async mutex ─────────────────────────────────────────────
+  // Serialises read-modify-write on REVIEW_STATE_*.json so the bulk POST and
+  // the delta endpoints cannot interleave within one process.  Keyed by the
+  // resolved state-file path so /api/switch starts a fresh lock chain.
+  const locks = new Map();
+  function withStateLock(statePath, fn) {
+    const prev = locks.get(statePath) || Promise.resolve();
+    const next = prev.then(fn, fn);
+    locks.set(statePath, next);
+    // Drop slot when settled if no one queued behind us.  .then (not .finally)
+    // so the cleanup branch doesn't fork an orphan promise on rejection.
+    const cleanup = () => { if (locks.get(statePath) === next) locks.delete(statePath); };
+    next.then(cleanup, cleanup);
+    return next;
+  }
+
+  function readStateFile(statePath) {
+    if (!fs.existsSync(statePath)) return {};
+    try { return JSON.parse(fs.readFileSync(statePath, 'utf8')); }
+    catch { return {}; }
+  }
+
+  // Write JSON to <statePath>.tmp then rename, so a crashed write never leaves
+  // a half-file that the next reader would treat as empty.  Writes are serialised
+  // per statePath by withStateLock, so a single `.tmp` suffix can't collide.
+  function atomicWriteStateFile(statePath, obj) {
+    const tmp = `${statePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+    fs.renameSync(tmp, statePath);
+  }
+
+  function stateFilePath() {
+    return path.join(worktreePath, `REVIEW_STATE_${worktreeName}.json`);
+  }
+
   function loadData() {
     const currentHead = getHeadHash(worktreePath);
     if (patchesCache && cachedHeadHash === currentHead) return;
@@ -91,9 +126,11 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
     }
   });
 
-  // GET /api/state — load persisted review state, including existing prompt if available
+  // GET /api/state — load persisted review state, including existing prompt if available.
+  // Reads inline (not via readStateFile) so a malformed state JSON falls through
+  // to the bare `{}` fallback below, matching the long-standing contract.
   app.get('/api/state', (req, res) => {
-    const statePath = path.join(worktreePath, `REVIEW_STATE_${worktreeName}.json`);
+    const statePath = stateFilePath();
     const mdPath = path.join(worktreePath, `REVIEW_FEEDBACK_${worktreeName}.md`);
     try {
       const state = fs.existsSync(statePath)
@@ -108,11 +145,128 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
     }
   });
 
-  // POST /api/state — persist review state only (never touches the MD file)
-  app.post('/api/state', (req, res) => {
-    const statePath = path.join(worktreePath, `REVIEW_STATE_${worktreeName}.json`);
+  // POST /api/state — bulk write: full replace of the state file.
+  // Kept for the submit/reset-on-clear flow.  Goes through the same lock and
+  // atomic writer as the delta endpoints so the two paths cannot race.
+  app.post('/api/state', async (req, res) => {
+    const statePath = stateFilePath();
     try {
-      fs.writeFileSync(statePath, JSON.stringify(req.body, null, 2), 'utf8');
+      await withStateLock(statePath, () => atomicWriteStateFile(statePath, req.body));
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Delta endpoints ──────────────────────────────────────────────────────
+  // Each mutates one logical entry of the persisted state.  All run under the
+  // per-worktree lock so two tabs editing different keys never clobber each
+  // other (the bug the bulk POST has when full snapshots collide).
+
+  // POST /api/state/comment — { patchHash, file, key, comment | null }
+  // comment === null deletes the entry (and prunes empty parent objects so
+  // GET /api/state matches the in-memory shape produced by deleteComment).
+  app.post('/api/state/comment', async (req, res) => {
+    const { patchHash, file, key, comment } = req.body || {};
+    if (typeof patchHash !== 'string' || typeof file !== 'string' || typeof key !== 'string') {
+      return res.status(400).json({ error: 'patchHash, file, key are required strings.' });
+    }
+    if (comment !== null && (typeof comment !== 'object' || Array.isArray(comment))) {
+      return res.status(400).json({ error: 'comment must be an object or null.' });
+    }
+    const statePath = stateFilePath();
+    try {
+      await withStateLock(statePath, () => {
+        const state = readStateFile(statePath);
+        if (!state.comments) state.comments = {};
+        if (comment === null) {
+          const byFile = state.comments[patchHash];
+          if (byFile && byFile[file]) {
+            delete byFile[file][key];
+            if (Object.keys(byFile[file]).length === 0) delete byFile[file];
+            if (Object.keys(byFile).length === 0) delete state.comments[patchHash];
+          }
+        } else {
+          if (!state.comments[patchHash]) state.comments[patchHash] = {};
+          if (!state.comments[patchHash][file]) state.comments[patchHash][file] = {};
+          state.comments[patchHash][file][key] = comment;
+        }
+        atomicWriteStateFile(statePath, state);
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/state/general-comment — { patchHash, text }
+  // Empty string is stored as-is; callers wanting to clear can send "".
+  app.post('/api/state/general-comment', async (req, res) => {
+    const { patchHash, text } = req.body || {};
+    if (typeof patchHash !== 'string' || typeof text !== 'string') {
+      return res.status(400).json({ error: 'patchHash and text are required strings.' });
+    }
+    const statePath = stateFilePath();
+    try {
+      await withStateLock(statePath, () => {
+        const state = readStateFile(statePath);
+        if (!state.generalComments) state.generalComments = {};
+        state.generalComments[patchHash] = text;
+        atomicWriteStateFile(statePath, state);
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/state/draft — { key, text | null }
+  // null (or missing) deletes the draft so a future load doesn't resurrect it.
+  app.post('/api/state/draft', async (req, res) => {
+    const { key, text } = req.body || {};
+    if (typeof key !== 'string') {
+      return res.status(400).json({ error: 'key is required string.' });
+    }
+    if (text != null && typeof text !== 'string') {
+      return res.status(400).json({ error: 'text must be a string or null.' });
+    }
+    const statePath = stateFilePath();
+    try {
+      await withStateLock(statePath, () => {
+        const state = readStateFile(statePath);
+        if (!state.drafts) state.drafts = {};
+        if (text == null) delete state.drafts[key];
+        else state.drafts[key] = text;
+        atomicWriteStateFile(statePath, state);
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/state/decision — { patchHash, kind: 'approve'|'unapprove'|'deny'|'undeny' }
+  // Mirrors the existing state.js mutators one-to-one.
+  app.post('/api/state/decision', async (req, res) => {
+    const { patchHash, kind } = req.body || {};
+    const validKinds = new Set(['approve', 'unapprove', 'deny', 'undeny']);
+    if (typeof patchHash !== 'string' || !validKinds.has(kind)) {
+      return res.status(400).json({ error: 'patchHash is required; kind must be approve|unapprove|deny|undeny.' });
+    }
+    const statePath = stateFilePath();
+    try {
+      await withStateLock(statePath, () => {
+        const state = readStateFile(statePath);
+        const approved = new Set(state.approved || []);
+        const denied = new Set(state.denied || []);
+        if (kind === 'approve')   approved.add(patchHash);
+        if (kind === 'unapprove') approved.delete(patchHash);
+        if (kind === 'deny')      denied.add(patchHash);
+        if (kind === 'undeny')    denied.delete(patchHash);
+        state.approved = [...approved];
+        state.denied = [...denied];
+        atomicWriteStateFile(statePath, state);
+      });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });

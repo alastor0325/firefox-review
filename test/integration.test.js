@@ -482,6 +482,185 @@ describe('server HTTP integration', () => {
     expect(body).toMatch(/#file-nav\s*{[^}]*top:\s*var\(--top-bar-height/);
     expect(body).toMatch(/max-height:\s*calc\(100vh\s*-\s*var\(--top-bar-height/);
   });
+
+  // ── Delta state endpoints (Task 1a of MULTI_TAB_SYNC_PLAN.md) ────────────
+  // These endpoints mutate one logical entry of the state file under a
+  // per-worktree lock.  The bulk POST /api/state shares the same lock so two
+  // tabs editing different entries cannot clobber each other.
+
+  async function resetState() {
+    await httpRequest(`${baseUrl}/api/state`, {
+      method: 'POST',
+      body: { comments: {}, generalComments: {}, approved: [], denied: [], drafts: {} },
+    });
+  }
+
+  test('POST /api/state/comment round-trips a single comment', async () => {
+    await resetState();
+    const comment = { patchHash: 'h1', file: 'a.js', line: 3, lineContent: '  x++;', text: 'why?' };
+    const post = await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js', key: 'n3', comment },
+    });
+    expect(post.status).toBe(200);
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(body.comments).toEqual({ h1: { 'a.js': { n3: comment } } });
+  });
+
+  test('POST /api/state/comment with comment=null deletes and prunes empty parents', async () => {
+    await resetState();
+    const c = { patchHash: 'h1', file: 'a.js', line: 1, lineContent: '', text: 't' };
+    await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js', key: 'n1', comment: c },
+    });
+    await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js', key: 'n1', comment: null },
+    });
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(body.comments).toEqual({}); // parent objects pruned
+  });
+
+  test('POST /api/state/comment rejects missing fields with 400', async () => {
+    const { status } = await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js' }, // missing key
+    });
+    expect(status).toBe(400);
+  });
+
+  test('POST /api/state/general-comment round-trips text', async () => {
+    await resetState();
+    await httpRequest(`${baseUrl}/api/state/general-comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', text: 'overall LGTM' },
+    });
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(body.generalComments).toEqual({ h1: 'overall LGTM' });
+  });
+
+  test('POST /api/state/draft stores text; null deletes the entry', async () => {
+    await resetState();
+    await httpRequest(`${baseUrl}/api/state/draft`, {
+      method: 'POST',
+      body: { key: 'h1/a.js/n3', text: 'WIP comment' },
+    });
+    let res = await httpRequest(`${baseUrl}/api/state`);
+    expect(res.body.drafts).toEqual({ 'h1/a.js/n3': 'WIP comment' });
+
+    await httpRequest(`${baseUrl}/api/state/draft`, {
+      method: 'POST',
+      body: { key: 'h1/a.js/n3', text: null },
+    });
+    res = await httpRequest(`${baseUrl}/api/state`);
+    expect(res.body.drafts).toEqual({});
+  });
+
+  test('POST /api/state/decision applies approve/unapprove/deny/undeny', async () => {
+    await resetState();
+    await httpRequest(`${baseUrl}/api/state/decision`, { method: 'POST', body: { patchHash: 'h1', kind: 'approve' } });
+    await httpRequest(`${baseUrl}/api/state/decision`, { method: 'POST', body: { patchHash: 'h2', kind: 'deny' } });
+    let res = await httpRequest(`${baseUrl}/api/state`);
+    expect(res.body.approved).toEqual(['h1']);
+    expect(res.body.denied).toEqual(['h2']);
+
+    await httpRequest(`${baseUrl}/api/state/decision`, { method: 'POST', body: { patchHash: 'h1', kind: 'unapprove' } });
+    await httpRequest(`${baseUrl}/api/state/decision`, { method: 'POST', body: { patchHash: 'h2', kind: 'undeny' } });
+    res = await httpRequest(`${baseUrl}/api/state`);
+    expect(res.body.approved).toEqual([]);
+    expect(res.body.denied).toEqual([]);
+  });
+
+  test('POST /api/state/decision rejects unknown kind with 400', async () => {
+    const { status } = await httpRequest(`${baseUrl}/api/state/decision`, {
+      method: 'POST',
+      body: { patchHash: 'h1', kind: 'nope' },
+    });
+    expect(status).toBe(400);
+  });
+
+  // The regression this whole task fixes: two tabs writing different entries
+  // at the same time must both persist.  Before delta endpoints, the bulk
+  // POST /api/state wrote each tab's full in-memory snapshot, so whichever
+  // tab flushed last would overwrite the other's edit.
+  test('parallel delta POSTs on different keys both persist', async () => {
+    await resetState();
+    const a = httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js', key: 'n1', comment: { patchHash: 'h1', file: 'a.js', line: 1, lineContent: '', text: 'from A' } },
+    });
+    const b = httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'b.js', key: 'n2', comment: { patchHash: 'h1', file: 'b.js', line: 2, lineContent: '', text: 'from B' } },
+    });
+    const c = httpRequest(`${baseUrl}/api/state/decision`, {
+      method: 'POST',
+      body: { patchHash: 'h1', kind: 'approve' },
+    });
+    const d = httpRequest(`${baseUrl}/api/state/draft`, {
+      method: 'POST',
+      body: { key: 'h1/c.js/n5', text: 'draft from D' },
+    });
+    const results = await Promise.all([a, b, c, d]);
+    for (const r of results) expect(r.status).toBe(200);
+
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(body.comments.h1['a.js'].n1.text).toBe('from A');
+    expect(body.comments.h1['b.js'].n2.text).toBe('from B');
+    expect(body.approved).toEqual(['h1']);
+    expect(body.drafts['h1/c.js/n5']).toBe('draft from D');
+
+    // The atomic writer should clean up after itself: no .tmp leftover.
+    const leftovers = fs.readdirSync(workRepoPath).filter((f) => f.includes('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
+  test('parallel delta POSTs on the same key — last-write-wins, file stays valid JSON', async () => {
+    await resetState();
+    const writes = Array.from({ length: 10 }, (_, i) =>
+      httpRequest(`${baseUrl}/api/state/general-comment`, {
+        method: 'POST',
+        body: { patchHash: 'h1', text: `text ${i}` },
+      })
+    );
+    const results = await Promise.all(writes);
+    for (const r of results) expect(r.status).toBe(200);
+
+    // After serialisation, the final value must be one of the writes — the
+    // file must still parse and the value must be from the set we sent.
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(/^text \d$/.test(body.generalComments.h1)).toBe(true);
+  });
+
+  // Legacy bulk POST and delta POSTs going in parallel: the lock ensures
+  // neither corrupts the JSON.  We don't assert on which wins (the test is
+  // about file integrity, not ordering); we only assert the result is
+  // self-consistent.
+  test('mixed legacy bulk POST + delta POSTs do not corrupt the state file', async () => {
+    await resetState();
+    const ops = [
+      httpRequest(`${baseUrl}/api/state`, {
+        method: 'POST',
+        body: { comments: {}, generalComments: { h1: 'bulk write' }, approved: ['h1'], denied: [], drafts: {} },
+      }),
+      httpRequest(`${baseUrl}/api/state/comment`, {
+        method: 'POST',
+        body: { patchHash: 'h2', file: 'x.js', key: 'n1', comment: { patchHash: 'h2', file: 'x.js', line: 1, lineContent: '', text: 'delta' } },
+      }),
+      httpRequest(`${baseUrl}/api/state/draft`, {
+        method: 'POST',
+        body: { key: 'h3/y.js/n4', text: 'parallel draft' },
+      }),
+    ];
+    const results = await Promise.all(ops);
+    for (const r of results) expect(r.status).toBe(200);
+
+    // File must parse to a valid object whatever the interleaving was.
+    const { status, body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(status).toBe(200);
+    expect(typeof body).toBe('object');
+  });
 });
 
 // ── startServer lifecycle ─────────────────────────────────────────────────

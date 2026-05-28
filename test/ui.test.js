@@ -2420,6 +2420,22 @@ describe('docs/index.html interactive demo', () => {
     expect(status).not.toBe('Save failed');
   }, 30000);
 
+  // The browser must successfully fetch and render the favicon — a regression
+  // that breaks the SVG (malformed XML, wrong path) would show up here as a
+  // failed image load.
+  test('favicon link resolves to a valid SVG document', async () => {
+    const href = await demoPage.locator('link[rel="icon"]').getAttribute('href');
+    expect(href).toBeTruthy();
+    const absolute = new URL(href, demoPage.url()).toString();
+    const res = await demoPage.request.get(absolute);
+    expect(res.status()).toBe(200);
+    const ct = res.headers()['content-type'] || '';
+    expect(ct).toMatch(/svg\+xml|application\/octet-stream|image\/svg/);
+    const text = await res.text();
+    expect(text).toMatch(/<svg[\s\S]*<\/svg>/);
+    expect(text).toMatch(/>R</);
+  }, 30000);
+
   // The "Revue" wordmark is the masthead — it must render visibly larger
   // than the inline #bug-id-display next to it, and it must be set in the
   // mono font so it reads as a logotype for a code-review tool.  A

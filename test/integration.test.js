@@ -476,6 +476,28 @@ describe('server HTTP integration', () => {
   // property declared in style.css. If the served CSS ever lacks the variable
   // reference, the sidebar would silently revert to the buggy `top: 0`
   // behavior under the top bar.
+  // Browsers will request /favicon.svg on every page load — the server must
+  // serve it with the correct content type, and the file must contain the
+  // brand colors so a future refactor can't silently drop the design.
+  test('GET /favicon.svg returns the brand-coloured SVG', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/favicon.svg`);
+    expect(status).toBe(200);
+    expect(typeof body).toBe('string');
+    expect(body).toMatch(/<svg[^>]*viewBox="0 0 64 64"/);
+    expect(body).toMatch(/fill="#0b0d10"/);  // app background
+    expect(body).toMatch(/fill="#ebe5d6"/);  // wordmark cream
+    expect(body).toMatch(/fill="#3fb950"/);  // approve-green underline
+    expect(body).toMatch(/>R</);             // the letter mark itself
+  });
+
+  // The HTML must link to the favicon, otherwise the browser falls back to
+  // the generic globe icon even though the SVG ships fine.
+  test('GET / serves HTML that links to favicon.svg', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/`);
+    expect(status).toBe(200);
+    expect(body).toMatch(/<link\s+rel="icon"[^>]*type="image\/svg\+xml"[^>]*href="favicon\.svg"/);
+  });
+
   test('GET /style.css ships the --top-bar-height-driven sidebar offset', async () => {
     const { status, body } = await httpRequest(`${baseUrl}/style.css`);
     expect(status).toBe(200);

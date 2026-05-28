@@ -152,10 +152,53 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
     const statePath = stateFilePath();
     try {
       await withStateLock(statePath, () => atomicWriteStateFile(statePath, req.body));
+      publishStateEvent({ kind: 'bulk' }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ── State event subscribers (SSE) ────────────────────────────────────────
+  // Long-lived /api/state/events streams.  Each subscriber records the
+  // worktree it connected for; on /api/switch we silently stop delivering
+  // events to the now-stale subscriber, relying on the client side to close
+  // and reopen its EventSource inside the next loadAndRender (see
+  // public/app.js where initStateChannel runs on every load).
+  const stateSubscribers = new Set();
+  let versionCounter = 0;
+
+  function publishStateEvent(delta, req) {
+    const tabId = String(req.headers['x-tab-id'] || '');
+    const seq = parseInt(req.headers['x-tab-seq'], 10) || 0;
+    versionCounter++;
+    const payload = JSON.stringify({ ...delta, _from: tabId, _seq: seq, _version: versionCounter });
+    for (const sub of stateSubscribers) {
+      if (sub.worktreeName !== worktreeName) continue;
+      try { sub.res.write(`data: ${payload}\n\n`); }
+      catch { /* dead stream — removed on its own 'close' */ }
+    }
+  }
+
+  // GET /api/state/events — SSE: live deltas for the connection's worktree.
+  app.get('/api/state/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    const sub = { res, worktreeName };
+    stateSubscribers.add(sub);
+    res.write(`data: ${JSON.stringify({ kind: 'hello', _version: versionCounter })}\n\n`);
+
+    const ping = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch { /* dropped */ }
+    }, 15000);
+
+    req.on('close', () => {
+      stateSubscribers.delete(sub);
+      clearInterval(ping);
+    });
   });
 
   // ── Delta endpoints ──────────────────────────────────────────────────────
@@ -193,6 +236,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
         }
         atomicWriteStateFile(statePath, state);
       });
+      publishStateEvent({ kind: 'comment', patchHash, file, key, value: comment }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -214,6 +258,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
         state.generalComments[patchHash] = text;
         atomicWriteStateFile(statePath, state);
       });
+      publishStateEvent({ kind: 'general-comment', patchHash, value: text }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -239,6 +284,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
         else state.drafts[key] = text;
         atomicWriteStateFile(statePath, state);
       });
+      publishStateEvent({ kind: 'draft', key, value: text }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -263,6 +309,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
         state.denied = denied;
         atomicWriteStateFile(statePath, state);
       });
+      publishStateEvent({ kind: 'revisions' }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -291,6 +338,7 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
         state.denied = [...denied];
         atomicWriteStateFile(statePath, state);
       });
+      publishStateEvent({ kind: 'decision', patchHash, action: kind }, req);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });

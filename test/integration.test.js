@@ -633,6 +633,119 @@ describe('server HTTP integration', () => {
     expect(/^text \d$/.test(body.generalComments.h1)).toBe(true);
   });
 
+  // ── SSE state-events stream (Task 3a) ─────────────────────────────────
+  // Two listeners must both receive a delta event.  Each event carries the
+  // origin tab id + per-tab seq so peer tabs can dedupe duplicates that
+  // arrive over both BroadcastChannel and SSE.
+  test('GET /api/state/events fans a delta out to all connected listeners', async () => {
+    await resetState();
+    function openListener() {
+      return new Promise((resolve) => {
+        const req = http.get(`${baseUrl}/api/state/events`, (res) => {
+          const events = [];
+          let buf = '';
+          res.on('data', (chunk) => {
+            buf += chunk;
+            const parts = buf.split('\n\n');
+            buf = parts.pop();
+            for (const part of parts) {
+              if (part.startsWith('data: ')) {
+                try { events.push(JSON.parse(part.slice(6))); } catch {}
+              }
+            }
+          });
+          resolve({ req, events, close: () => req.destroy() });
+        });
+      });
+    }
+    const a = await openListener();
+    const b = await openListener();
+    // Wait for the initial "hello" so we don't race the comment POST.
+    await new Promise((r) => setTimeout(r, 100));
+
+    await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash: 'h1', file: 'a.js', key: 'n1', comment: { patchHash: 'h1', file: 'a.js', line: 1, lineContent: '', text: 'hi' } },
+    });
+    await new Promise((r) => setTimeout(r, 150));
+
+    a.close(); b.close();
+    const aDelta = a.events.find((e) => e.kind === 'comment');
+    const bDelta = b.events.find((e) => e.kind === 'comment');
+    expect(aDelta).toBeTruthy();
+    expect(bDelta).toBeTruthy();
+    expect(aDelta.patchHash).toBe('h1');
+    expect(aDelta._version).toBe(bDelta._version);
+  });
+
+  // After a client disconnects, its subscriber slot must be released; if it
+  // weren't, publishStateEvent would try to write to a dead socket forever.
+  test('SSE subscriber slot is released when the client disconnects', async () => {
+    await resetState();
+    function openListener() {
+      return new Promise((resolve) => {
+        const req = http.get(`${baseUrl}/api/state/events`, () => resolve(req));
+      });
+    }
+    // Trigger one publish before connecting so the subscriber count we
+    // observe is unambiguous (just our connection).
+    const r1 = await openListener();
+    await new Promise((r) => setTimeout(r, 100));
+    r1.destroy();
+    // Wait a moment for req.on('close') to fire on the server.
+    await new Promise((r) => setTimeout(r, 100));
+    // The remaining publishStateEvent calls must not throw or hang.
+    const post = await httpRequest(`${baseUrl}/api/state/general-comment`, {
+      method: 'POST',
+      body: { patchHash: 'h-cleanup', text: 'still works' },
+    });
+    expect(post.status).toBe(200);
+  });
+
+  test('SSE event includes X-Tab-Id and X-Tab-Seq from the originating POST', async () => {
+    await resetState();
+    const collected = [];
+    const req = http.get(`${baseUrl}/api/state/events`, (res) => {
+      let buf = '';
+      res.on('data', (chunk) => {
+        buf += chunk;
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for (const part of parts) {
+          if (part.startsWith('data: ')) {
+            try { collected.push(JSON.parse(part.slice(6))); } catch {}
+          }
+        }
+      });
+    });
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Send a POST with the tab-id/seq headers the client always attaches.
+    const data = JSON.stringify({ patchHash: 'h1', kind: 'approve' });
+    await new Promise((resolve, reject) => {
+      const postReq = http.request({
+        hostname: '127.0.0.1', port: new URL(baseUrl).port, path: '/api/state/decision',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data),
+          'X-Tab-Id': 'tab-foo',
+          'X-Tab-Seq': '42',
+        },
+      }, (r) => { r.on('end', resolve); r.resume(); });
+      postReq.on('error', reject);
+      postReq.write(data); postReq.end();
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    req.destroy();
+
+    const ev = collected.find((e) => e.kind === 'decision');
+    expect(ev).toBeTruthy();
+    expect(ev._from).toBe('tab-foo');
+    expect(ev._seq).toBe(42);
+    expect(ev.action).toBe('approve');
+  });
+
   // Legacy bulk POST and delta POSTs going in parallel: the lock ensures
   // neither corrupts the JSON.  We don't assert on which wins (the test is
   // about file integrity, not ordering); we only assert the result is

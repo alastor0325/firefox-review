@@ -2219,4 +2219,37 @@ describe('draft persistence and multi-tab sync', () => {
     await pageA.close();
     await pageB.close();
   }, 25000);
+
+  // Two separate browser contexts do NOT share a BroadcastChannel, so this
+  // test proves the SSE transport delivers cross-window/cross-machine.
+  test('cross-context sync via SSE: save in A visible in B without reload', async () => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    try {
+      const pageA = await ctxA.newPage();
+      const pageB = await ctxB.newPage();
+      await pageA.goto(dpBaseUrl);
+      await pageA.waitForSelector('.patch-heading', { state: 'visible' });
+      await pageA.request.post(`${dpBaseUrl}/api/state`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify({ comments: {}, generalComments: {}, approved: [], denied: [], drafts: {}, revisions: [] }),
+      });
+      await pageA.reload();
+      await pageA.waitForSelector('.patch-heading', { state: 'visible' });
+      await pageB.goto(dpBaseUrl);
+      await pageB.waitForSelector('.patch-heading', { state: 'visible' });
+
+      await pageA.click('.line-added .ln-content');
+      await pageA.waitForSelector('.comment-form-row textarea');
+      await pageA.fill('.comment-form-row textarea', 'cross-context hi');
+      await pageA.click('.btn-save');
+      await pageA.waitForSelector('.comment-display-row');
+
+      await pageB.waitForSelector('.comment-display-row', { timeout: 5000 });
+      expect(await pageB.textContent('.comment-display-row .comment-body')).toBe('cross-context hi');
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
+  }, 25000);
 });

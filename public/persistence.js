@@ -4,27 +4,70 @@ import { state, allPatchesFinished } from './state.js';
 // Each save broadcasts a delta describing what changed so peer tabs can
 // apply a targeted update instead of refetching the entire state and
 // re-rendering (which would clobber any open form mid-typing).
+//
+// Two transports run in parallel:
+//   - BroadcastChannel:  fast same-browser fan-out.
+//   - Server SSE stream: covers cross-browser and cross-machine.
+// Peers may receive the same logical event from both transports, so each
+// delta is stamped with `_from` (origin tab id) + `_seq` (per-tab counter)
+// and the receiver dedupes by (_from, _seq).
 let stateChannel = null;
+let stateEvents = null;
 const TAB_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+let mySeq = 0;
+const lastSeenSeq = new Map(); // tabId -> highest _seq applied
+
+function makeReceiver(onRemoteDelta) {
+  return (delta) => {
+    if (!delta) return;
+    const from = delta._from;
+    const seq = delta._seq;
+    if (from === TAB_ID) return; // never apply our own
+    if (from && seq) {
+      const last = lastSeenSeq.get(from) || 0;
+      if (seq <= last) return;   // duplicate (other transport already delivered)
+      lastSeenSeq.set(from, seq);
+    }
+    onRemoteDelta(delta);
+  };
+}
 
 export function initStateChannel(worktreeName, onRemoteDelta) {
-  if (typeof BroadcastChannel === 'undefined') return null;
   closeStateChannel();
-  stateChannel = new BroadcastChannel(`revue-state-${worktreeName}`);
-  stateChannel.onmessage = (e) => {
-    if (!e.data || e.data.tabId === TAB_ID) return;
-    if (e.data.type === 'delta') onRemoteDelta(e.data.delta);
-  };
+  const receive = makeReceiver(onRemoteDelta);
+  if (typeof BroadcastChannel !== 'undefined') {
+    stateChannel = new BroadcastChannel(`revue-state-${worktreeName}`);
+    stateChannel.onmessage = (e) => {
+      if (!e.data || e.data.type !== 'delta') return;
+      receive(e.data.delta);
+    };
+  }
+  if (typeof EventSource !== 'undefined') {
+    stateEvents = new EventSource('/api/state/events');
+    stateEvents.onmessage = (e) => {
+      let data;
+      try { data = JSON.parse(e.data); } catch { return; }
+      if (!data || data.kind === 'hello') return;
+      receive(data);
+    };
+  }
   return stateChannel;
 }
 
 export function closeStateChannel() {
   if (stateChannel) { stateChannel.close(); stateChannel = null; }
+  if (stateEvents)  { stateEvents.close();  stateEvents = null; }
+  lastSeenSeq.clear();
 }
 
-function broadcastDelta(delta) {
+function stampDelta(delta) {
+  mySeq += 1;
+  return { ...delta, _from: TAB_ID, _seq: mySeq };
+}
+
+function broadcastDelta(stamped) {
   if (!stateChannel) return;
-  try { stateChannel.postMessage({ type: 'delta', tabId: TAB_ID, delta }); }
+  try { stateChannel.postMessage({ type: 'delta', delta: stamped }); }
   catch { /* channel closed mid-save — ignore */ }
 }
 
@@ -53,15 +96,20 @@ function showFailed() {
 
 async function postJson(url, body, delta) {
   showSaving();
+  // Stamp first so both transports see the same _from/_seq — that's what
+  // lets the receiver dedupe between BroadcastChannel and SSE.
+  const stamped = delta ? stampDelta(delta) : null;
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: stamped
+        ? { 'Content-Type': 'application/json', 'X-Tab-Id': stamped._from, 'X-Tab-Seq': String(stamped._seq) }
+        : { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) { showFailed(); return false; }
     showSaved();
-    if (delta) broadcastDelta(delta);
+    if (stamped) broadcastDelta(stamped);
     return true;
   } catch {
     showFailed();

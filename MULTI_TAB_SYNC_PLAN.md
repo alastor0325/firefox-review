@@ -111,7 +111,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 
 ---
 
-### Task 3a — SSE endpoint added alongside BroadcastChannel [ ]
+### Task 3a — SSE endpoint added alongside BroadcastChannel [x]
 **Goal:** make cross-browser / cross-window sync possible. Depends on Task 2. BroadcastChannel stays as primary; SSE runs in parallel and is the only path used when BC isn't available.
 
 **Server**
@@ -133,7 +133,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 **Risk:** low — SSE is additive. If it fails silently, BroadcastChannel still covers the common case.
 
 **Status notes:**
-- (none yet)
+- 2026-05-27 — landed. `GET /api/state/events` SSE stream with per-worktree subscriber filtering and per-connection cleanup on `req.close`. Every write endpoint calls `publishStateEvent(delta, req)` which carries `_from`/`_seq` from the request's `X-Tab-Id`/`X-Tab-Seq` headers plus an in-process `_version`. Client `initStateChannel` opens an `EventSource` alongside the existing `BroadcastChannel`; both feed `makeReceiver(...)` which dedupes by `(_from, _seq)` so duplicates from the two transports apply once. New tests: SSE fan-out, header forwarding, subscriber cleanup on disconnect, cross-context Playwright (no shared BC) sync. Suite 517/517 green.
 
 ---
 
@@ -181,3 +181,4 @@ Append a dated entry when a task changes status.
 - 2026-05-27 — Task 1a complete.
 - 2026-05-27 — Task 1b complete.
 - 2026-05-27 — Task 2 complete.
+- 2026-05-27 — Task 3a complete.

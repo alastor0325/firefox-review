@@ -483,6 +483,19 @@ describe('server HTTP integration', () => {
     expect(body).toMatch(/max-height:\s*calc\(100vh\s*-\s*var\(--top-bar-height/);
   });
 
+  // The autosave indicator cycles through "", "Saving…", "Saved", and
+  // "Save failed" while the user types.  Without a fixed slot the inline
+  // span grows from 0 to ~80 px wide and 0 to one-line tall, shifting the
+  // header in/out as each save settles.  If this rule ever regresses the
+  // pulse comes back.
+  test('GET /style.css pins #autosave-status to a fixed width + min-height', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/style.css`);
+    expect(status).toBe(200);
+    expect(body).toMatch(/#autosave-status\s*{[^}]*display:\s*block/);
+    expect(body).toMatch(/#autosave-status\s*{[^}]*width:\s*90px/);
+    expect(body).toMatch(/#autosave-status\s*{[^}]*min-height:\s*1\.5em/);
+  });
+
   // ── Delta state endpoints (Task 1a of MULTI_TAB_SYNC_PLAN.md) ────────────
   // These endpoints mutate one logical entry of the state file under a
   // per-worktree lock.  The bulk POST /api/state shares the same lock so two

@@ -2371,4 +2371,30 @@ describe('docs/index.html interactive demo', () => {
     const status = (await demoPage.locator('#autosave-status').textContent()).trim();
     expect(status).not.toBe('Save failed');
   }, 30000);
+
+  // The autosave indicator must occupy the same box regardless of which
+  // message it currently shows — otherwise the header pulses every time a
+  // save settles.  Measures bounding box across all four content states and
+  // asserts they are identical.
+  test('#autosave-status bounding box is identical across "", "Saving…", "Saved", "Save failed"', async () => {
+    const states = ['', 'Saving…', 'Saved', 'Save failed'];
+    const boxes = [];
+    for (const text of states) {
+      await demoPage.evaluate((t) => {
+        document.querySelector('#autosave-status').textContent = t;
+      }, text);
+      // Yield a frame so layout settles before we measure.
+      await demoPage.waitForTimeout(50);
+      boxes.push(await demoPage.locator('#autosave-status').boundingBox());
+    }
+    // Every state should report the same x / y / width / height.
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i]).toEqual(boxes[0]);
+    }
+    // And the autosave's right edge must equal the submit button's right edge.
+    const submitBox = await demoPage.locator('#btn-submit').boundingBox();
+    expect(boxes[0].x + boxes[0].width).toBeCloseTo(submitBox.x + submitBox.width, 1);
+    // Reset so subsequent tests don't see leftover text.
+    await demoPage.evaluate(() => { document.querySelector('#autosave-status').textContent = ''; });
+  }, 30000);
 });

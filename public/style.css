@@ -214,13 +214,14 @@ button { font-family: inherit; }
 
 #header h1 .app-name {
   font-family: var(--font-sans);
-  font-size: 18px;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1;
   color: var(--ink);
   text-decoration: none;
   position: relative;
-  padding-right: 14px;
+  padding-right: 16px;
   transition: color 0.12s var(--ease);
 }
 /* Vertical hairline divider between wordmark and worktree id */

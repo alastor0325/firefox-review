@@ -2372,6 +2372,21 @@ describe('docs/index.html interactive demo', () => {
     expect(status).not.toBe('Save failed');
   }, 30000);
 
+  // The "Revue" wordmark is the masthead — it must render visibly larger
+  // than the inline #bug-id-display next to it so the header has a clear
+  // visual anchor.  A regression that shrinks the wordmark (e.g. someone
+  // resets font-size on .app-name) would be caught here.
+  test('.app-name wordmark renders larger than the inline worktree id', async () => {
+    const wordmark = await demoPage.locator('.app-name').boundingBox();
+    const bugId    = await demoPage.locator('#bug-id-display').boundingBox();
+    expect(wordmark.height).toBeGreaterThanOrEqual(22);
+    expect(wordmark.height).toBeGreaterThan(bugId.height + 4);
+    const wordmarkSize = await demoPage.locator('.app-name').evaluate((el) =>
+      parseFloat(getComputedStyle(el).fontSize)
+    );
+    expect(wordmarkSize).toBe(26);
+  }, 30000);
+
   // The autosave indicator must occupy the same box regardless of which
   // message it currently shows — otherwise the header pulses every time a
   // save settles.  Measures bounding box across all four content states and

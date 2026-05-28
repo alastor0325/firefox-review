@@ -496,6 +496,16 @@ describe('server HTTP integration', () => {
     expect(body).toMatch(/#autosave-status\s*{[^}]*min-height:\s*1\.5em/);
   });
 
+  // The "Revue" wordmark anchors the header's visual balance against the
+  // Generate Review Prompt button on the right.  A small (≤18 px) wordmark
+  // looks lost next to the filled button; the chosen size is the contract.
+  test('GET /style.css renders the Revue wordmark at the masthead size', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/style.css`);
+    expect(status).toBe(200);
+    expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-size:\s*26px/);
+    expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-weight:\s*700/);
+  });
+
   // ── Delta state endpoints (Task 1a of MULTI_TAB_SYNC_PLAN.md) ────────────
   // These endpoints mutate one logical entry of the state file under a
   // per-worktree lock.  The bulk POST /api/state shares the same lock so two

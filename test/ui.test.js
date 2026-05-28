@@ -2304,3 +2304,71 @@ describe('draft persistence and multi-tab sync', () => {
     }
   }, 25000);
 });
+
+// ── docs/index.html interactive demo ──────────────────────────────────────
+// The demo mocks every endpoint the real client uses.  When a new endpoint
+// is added (e.g. delta saves in MULTI_TAB_SYNC_PLAN.md Task 1a) the mock has
+// to be updated or the demo silently shows "Save failed" on every action.
+// This test serves the static files and clicks Save end-to-end so the
+// regression is caught automatically next time.
+
+describe('docs/index.html interactive demo', () => {
+  let demoServer, demoBaseUrl, demoPage;
+
+  beforeAll(async () => {
+    // eslint-disable-next-line global-require
+    const express = require('express');
+    const projectRoot = path.join(__dirname, '..');
+    const app = express();
+    app.use(express.static(projectRoot));
+    const port = await findAvailablePort(19700);
+    await new Promise((resolve) => { demoServer = app.listen(port, '127.0.0.1', resolve); });
+    demoBaseUrl = `http://127.0.0.1:${port}`;
+
+    demoPage = await browser.newPage();
+    await demoPage.goto(`${demoBaseUrl}/docs/index.html`);
+    await demoPage.waitForSelector('.patch-heading', { state: 'visible', timeout: 10000 });
+  }, 30000);
+
+  afterAll(async () => {
+    await demoPage?.close();
+    await new Promise((resolve) => demoServer?.close(resolve));
+  });
+
+  test('demo loads and renders the mock patches', async () => {
+    // Demo has six mock patches (Bug 1234567 Parts 1-6).
+    const tabCount = await demoPage.locator('.patch-tab').count();
+    expect(tabCount).toBe(6);
+  });
+
+  test('saving a comment in the demo does not surface "Save failed"', async () => {
+    // Part 1 is approved in the mock state which puts the diff in readonly
+    // mode (clicks ignored).  Switch to Part 2 (denied, editable) first.
+    await demoPage.locator('.patch-tab').nth(1).click();
+    await demoPage.waitForFunction(
+      () => document.querySelectorAll('.patch-tab')[1].classList.contains('active')
+    );
+    // `.line-added` exists in every patch's DOM (hidden when not active).
+    // Filter to the visible one so Playwright's actionability check passes.
+    await demoPage.locator('.line-added .ln-content').locator('visible=true').first().click();
+    await demoPage.waitForSelector('.comment-form-row textarea');
+    await demoPage.fill('.comment-form-row textarea', 'demo comment');
+    await demoPage.locator('.comment-form-row .btn-save').click();
+    await demoPage.waitForSelector('.comment-display-row');
+    await demoPage.waitForTimeout(300);
+
+    const status = (await demoPage.locator('#autosave-status').textContent()).trim();
+    expect(status).not.toBe('Save failed');
+  }, 30000);
+
+  test('approving a patch in the demo does not surface "Save failed"', async () => {
+    // Same hidden-vs-visible filtering as above: every patch panel has its
+    // own approve/unapprove button in the DOM, but only one is visible.
+    const btn = demoPage.locator('.patch-heading-actions .btn-approve, .patch-heading-actions .btn-unapprove')
+      .locator('visible=true').first();
+    await btn.click();
+    await demoPage.waitForTimeout(300);
+    const status = (await demoPage.locator('#autosave-status').textContent()).trim();
+    expect(status).not.toBe('Save failed');
+  }, 30000);
+});

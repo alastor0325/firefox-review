@@ -3,6 +3,32 @@ import { saveRevisionsNow } from './persistence.js';
 
 // ── Revision detection ─────────────────────────────────────────────────────
 
+// FNV-1a 32-bit, returned as 8 lowercase hex chars.  We only ever compare
+// fingerprints for equality (migrateApprovals), so a small non-cryptographic
+// hash is sufficient — and storing 8 bytes instead of every added/removed
+// line keeps REVIEW_STATE_*.json from blowing past Express's body-parser
+// limit on worktrees with many large patches.
+function fnv1a32(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+const FP_HASH_RE = /^[0-9a-f]{8}$/;
+
+// Pre-hash format kept added/removed lines verbatim.  When migrating from a
+// state file written by older versions, re-hash on read so the comparison
+// against newly-computed (hashed) fingerprints stays correct and approvals
+// are not spuriously cleared.
+export function normalizeFingerprint(fp) {
+  if (typeof fp !== 'string') return fp;
+  if (FP_HASH_RE.test(fp)) return fp;
+  return fnv1a32(fp);
+}
+
 /**
  * Compute a fingerprint of a patch's actual changed lines (added/removed only,
  * not context).  Two patches with identical fingerprints have the same net code
@@ -17,7 +43,7 @@ export function diffFingerprint(patch) {
       }
     }
   }
-  return lines.join('\n');
+  return fnv1a32(lines.join('\n'));
 }
 
 /**
@@ -41,7 +67,9 @@ export function migrateApprovals(prevPatches, currPatches, approved, denied) {
     // If both fingerprints are absent (old state file) fall back to the same
     // keep-decision behaviour so we don't silently drop existing approvals.
     const hasFp = prev.diffFingerprint !== undefined && curr.diffFingerprint !== undefined;
-    const diffChanged = hasFp && prev.diffFingerprint !== curr.diffFingerprint;
+    // Normalize prev to the new hash format so legacy state files still
+    // produce the right comparison after upgrade.
+    const diffChanged = hasFp && normalizeFingerprint(prev.diffFingerprint) !== curr.diffFingerprint;
 
     if (diffChanged) {
       // Actual code changed — reviewer must re-evaluate
@@ -122,5 +150,5 @@ export function getRevisionList(patchIdx) {
 
 // Allow unit tests to import without a full browser environment.
 if (typeof module !== 'undefined') {
-  module.exports = { diffFingerprint, migrateApprovals, detectRevisionChanges, getRevisionList };
+  module.exports = { diffFingerprint, normalizeFingerprint, migrateApprovals, detectRevisionChanges, getRevisionList };
 }

@@ -463,29 +463,36 @@
     prompt: 'You are being asked to revise your implementation in worktree firefox-bug-1234567.\n\n## Full patch series:\n- a1b2c3d4 Bug 1234567 - Part 1: Add waitingforkey IDL and event dispatch  [APPROVED — no issues]\n- e5f6a7b8 Bug 1234567 - Part 2: Handle ClearLead in ExternalEngineStateMachine  [DENIED — requires significant changes]\n- c9d0e1f2 Bug 1234567 - Part 3: Refresh CDM proxy trusted input on proxy set  [DENIED — requires significant changes]\n- d3e4f5a6 Bug 1234567 - Part 4: Add GTest for WaitingForKey event dispatch  [APPROVED — no issues]\n- f7a8b9c0 Bug 1234567 - Part 5: Update mochitest for waitingforkey  [APPROVED — no issues]\n- b1c2d3e4 Bug 1234567 - Part 6: Update EME telemetry probes  [DENIED — requires significant changes]',
   };
 
+  // ── Mock EventSource ──────────────────────────────────────────────────────
+  // The real client opens /api/state/events for cross-tab sync.  On the
+  // static demo page there is no server, so we stub EventSource with an
+  // inert object — the page is single-tab anyway and there's nothing to sync.
+  window.EventSource = function() {
+    return { onmessage: null, onerror: null, close() {} };
+  };
+
   // ── Mock fetch ────────────────────────────────────────────────────────────
+
+  const okJson = (body) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+  const okEmpty = () => okJson({ ok: true });
 
   window.fetch = function(url, opts) {
     // GET /api/diff
-    if (url === '/api/diff') {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(MOCK_DIFF),
-      });
-    }
+    if (url === '/api/diff') return okJson(MOCK_DIFF);
+
     // GET /api/state
     if (url === '/api/state' && (!opts || opts.method !== 'POST')) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(MOCK_STATE),
-      });
+      return okJson(MOCK_STATE);
     }
-    // POST /api/state (auto-save — no-op in demo)
-    if (url === '/api/state' && opts && opts.method === 'POST') {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ ok: true }),
-      });
+    // POST /api/state (bulk submit-reset — no-op in demo)
+    if (url === '/api/state' && opts && opts.method === 'POST') return okEmpty();
+
+    // POST /api/state/{comment,general-comment,draft,decision,revisions}
+    // Per-field delta endpoints (MULTI_TAB_SYNC_PLAN.md Task 1a).  Saves
+    // are no-ops in the demo, but the client expects 200 OK so the UI shows
+    // "Saved" instead of "Save failed".
+    if (opts && opts.method === 'POST' && url.startsWith('/api/state/')) {
+      return okEmpty();
     }
     // POST /api/submit
     if (url === '/api/submit') {
@@ -600,6 +607,6 @@
   };
   </script>
 
-  <script src="../public/app.js"></script>
+  <script type="module" src="../public/app.js"></script>
 </body>
 </html>

@@ -73,7 +73,7 @@ The server defaults to port `7777` and increments automatically if that port is 
 - **Inline comments** — click any diff line or commit message to annotate; drafts persist across page reloads and only clear when you click "Generate Review Prompt"
 - **Approve / Deny** — mark each patch; denied patches always appear in the generated prompt even without comments
 - **Approval persistence** — approved patches stay approved across reloads and after "Generate Review Prompt"; approvals survive rebases and commit-message amends (same code = same approval); only actual code changes clear an approval
-- **Multi-tab sync** — open the same worktree in two browser tabs and they stay in sync via BroadcastChannel; a save in one tab is picked up by the other without manual reload, so a stale tab can't overwrite saved comments
+- **Multi-tab sync** — open the same worktree in any number of tabs (or even separate browsers / windows pointing at the same dev server) and they stay in sync over a server-sent-events stream. Each save is a per-field delta, so two tabs editing different lines never clobber each other and open comment forms aren't ripped out from under you when a peer saves elsewhere
 - **Revision detection** — if commits are amended, a revision bar lets you compare old vs new diffs
 - **Generate Review Prompt** — writes `REVIEW_FEEDBACK_<worktree>.md` and copies the prompt to clipboard; review state auto-saves to `REVIEW_STATE_<worktree>.json`
 
@@ -101,7 +101,7 @@ Alternatively, `revue --restart` is sufficient for one-off server restarts when 
 
 Tests cover:
 - **Git module** — `parseDiff`, `parseCommitBody`, `parseWorktreeList`, `getHeadHash`, `getMergeBase` (including origin/main fallback), `getCommits`, `getDiffBetweenCommits`, `lcsCompare`, `getPatchLines`, `getFileLines`
-- **Server routes** — all API endpoints with real git repos and real HTTP: `/api/diff`, `/api/state`, `/api/submit`, `/api/headhash`, `/api/reload` (SSE), `/api/revdiff`, `/api/patchdiff/:hash`, `/api/worktrees`, `/api/switch`, `/api/filecontext` (including shell-injection guard)
+- **Server routes** — all API endpoints with real git repos and real HTTP: `/api/diff`, `/api/state`, the per-field delta endpoints (`/api/state/comment`, `/general-comment`, `/draft`, `/decision`, `/revisions`) with concurrency tests, `/api/state/events` (SSE), `/api/submit`, `/api/headhash`, `/api/reload` (SSE), `/api/revdiff`, `/api/patchdiff/:hash`, `/api/worktrees`, `/api/switch`, `/api/filecontext` (including shell-injection guard)
 - **`submitReview`** — combined prompt structure, approved/skipped/denied markers, commit message and inline feedback, multi-patch feedback
 - **Worktree switching** — `discoverWorktrees`, `/api/worktrees`, `/api/switch`, cache invalidation, per-worktree state files
 - **Browser UI** (real Chromium via Playwright): diff rendering, patch tabs, sidebar nav, approve/deny, inline comments, draft persistence, commit message comments, general feedback, expand-context rows, tab badges, worktree switcher bar, URL hash navigation, revision compare mode, update banner, result overlay, copy-prompt button, error states, empty-worktree state, nested file paths

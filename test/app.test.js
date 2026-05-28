@@ -121,24 +121,21 @@ describe('diffFingerprint', () => {
     return { files: [{ hunks: [{ lines }] }] };
   }
 
-  test('returns empty string for patch with no files', () => {
-    expect(diffFingerprint({ files: [] })).toBe('');
+  test('returns an 8-char lowercase hex string', () => {
+    expect(diffFingerprint({ files: [] })).toMatch(/^[0-9a-f]{8}$/);
+    expect(diffFingerprint(makePatch([{ type: 'added', content: 'x' }]))).toMatch(/^[0-9a-f]{8}$/);
   });
 
-  test('excludes context lines', () => {
-    const patch = makePatch([
-      { type: 'context', content: 'unchanged' },
-      { type: 'added',   content: 'new line'  },
-    ]);
-    expect(diffFingerprint(patch)).toBe('anew line');
+  test('context lines do not affect the fingerprint', () => {
+    const withCtx    = makePatch([{ type: 'context', content: 'unchanged' }, { type: 'added', content: 'x' }]);
+    const withoutCtx = makePatch([{ type: 'added',   content: 'x' }]);
+    expect(diffFingerprint(withCtx)).toBe(diffFingerprint(withoutCtx));
   });
 
-  test('includes added and removed lines with type prefix', () => {
-    const patch = makePatch([
-      { type: 'removed', content: 'old' },
-      { type: 'added',   content: 'new' },
-    ]);
-    expect(diffFingerprint(patch)).toBe('rold\nanew');
+  test('different added vs removed produce different fingerprints (type prefix included)', () => {
+    const added   = makePatch([{ type: 'added',   content: 'x' }]);
+    const removed = makePatch([{ type: 'removed', content: 'x' }]);
+    expect(diffFingerprint(added)).not.toBe(diffFingerprint(removed));
   });
 
   test('same changed lines produce identical fingerprint', () => {
@@ -151,34 +148,78 @@ describe('diffFingerprint', () => {
     const p2 = makePatch([{ type: 'added', content: 'bar' }]);
     expect(diffFingerprint(p1)).not.toBe(diffFingerprint(p2));
   });
+
+  // The new compact representation is what actually fixed
+  // REVIEW_STATE_*.json blowing past Express's 100 KB body-parser limit
+  // (see MULTI_TAB_SYNC_PLAN.md follow-up).  Worth a guard that a patch
+  // with many large lines still produces an 8-char hash.
+  test('stays compact even for a large patch', () => {
+    const big = makePatch(Array.from({ length: 5000 }, (_, i) => ({
+      type: 'added', content: `line number ${i} with a fair amount of content`,
+    })));
+    expect(diffFingerprint(big)).toMatch(/^[0-9a-f]{8}$/);
+  });
+});
+
+// ── Legacy-format migration ────────────────────────────────────────────────
+// State files written before the hash-fingerprint upgrade store the raw
+// concatenated lines in `diffFingerprint`.  Those must continue to compare
+// correctly against newly-computed (hashed) fingerprints so we don't wipe
+// every existing approval on first load after upgrade.
+
+describe('migrateApprovals — legacy long-form fingerprint', () => {
+  // Build a tiny patch whose new (hashed) fingerprint we can derive.
+  const newPatch = { files: [{ hunks: [{ lines: [{ type: 'added', content: 'foo' }] }] }] };
+  const newFp = diffFingerprint(newPatch); // 8 hex chars
+  const legacyFp = 'afoo';                  // pre-upgrade format
+
+  test('legacy prev fingerprint matching the same code carries the approval forward', () => {
+    const prev = [{ hash: 'old', diffFingerprint: legacyFp }];
+    const curr = [{ hash: 'new', diffFingerprint: newFp }];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('new')).toBe(true);
+    expect(result.approved.has('old')).toBe(false);
+  });
+
+  test('legacy prev fingerprint that differs from current still clears the approval', () => {
+    const prev = [{ hash: 'old', diffFingerprint: 'abar' }];
+    const curr = [{ hash: 'new', diffFingerprint: newFp }];
+    const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
+    expect(result.approved.has('old')).toBe(false);
+    expect(result.approved.has('new')).toBe(false);
+  });
 });
 
 // ── migrateApprovals — fingerprint-aware decisions ─────────────────────────
 
 describe('migrateApprovals — fingerprint-aware', () => {
+  // Real diffFingerprint output is 8 lowercase hex chars; use that shape in
+  // these tests so they reflect production data.
+  const FP1 = 'aaaaaaaa';
+  const FP2 = 'bbbbbbbb';
   function patch(hash, fp) {
     return fp !== undefined ? { hash, diffFingerprint: fp } : { hash };
   }
 
   test('same fingerprint, different hash → approved migrated to new hash', () => {
-    const prev = [patch('old', 'fp1')];
-    const curr = [patch('new', 'fp1')];
+    const prev = [patch('old', FP1)];
+    const curr = [patch('new', FP1)];
     const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
     expect(result.approved.has('new')).toBe(true);
     expect(result.approved.has('old')).toBe(false);
   });
 
   test('different fingerprint, different hash → approved cleared', () => {
-    const prev = [patch('old', 'fp1')];
-    const curr = [patch('new', 'fp2')];
+    const prev = [patch('old', FP1)];
+    const curr = [patch('new', FP2)];
     const result = migrateApprovals(prev, curr, new Set(['old']), new Set());
     expect(result.approved.has('old')).toBe(false);
     expect(result.approved.has('new')).toBe(false);
   });
 
   test('different fingerprint → denied cleared too', () => {
-    const prev = [patch('old', 'fp1')];
-    const curr = [patch('new', 'fp2')];
+    const prev = [patch('old', FP1)];
+    const curr = [patch('new', FP2)];
     const result = migrateApprovals(prev, curr, new Set(), new Set(['old']));
     expect(result.denied.has('old')).toBe(false);
     expect(result.denied.has('new')).toBe(false);

@@ -633,6 +633,24 @@ describe('server HTTP integration', () => {
     expect(/^text \d$/.test(body.generalComments.h1)).toBe(true);
   });
 
+  // Worktrees that accumulate many revisions can produce state files past
+  // 100 KB (each revision carries a diffFingerprint per patch).  The
+  // body-parser limit must accommodate that or POST /api/state/revisions
+  // (and the bulk reset) silently fail with 413, breaking sync.
+  test('POST /api/state/revisions accepts payloads well past Expresss default 100 KB', async () => {
+    await resetState();
+    // Build a ~500 KB payload via long diffFingerprint strings.
+    const big = 'x'.repeat(50 * 1024);
+    const revisions = Array.from({ length: 10 }, (_, i) => ({
+      savedAt: `2026-05-${(i % 28) + 1}T00:00:00Z`,
+      patches: [{ hash: `h${i}`, message: `m${i}`, diffFingerprint: big }],
+    }));
+    const res = await httpRequest(`${baseUrl}/api/state/revisions`, {
+      method: 'POST', body: { revisions, approved: [], denied: [] },
+    });
+    expect(res.status).toBe(200);
+  });
+
   // ── SSE state-events stream (Task 3a) ─────────────────────────────────
   // Two listeners must both receive a delta event.  Each event carries the
   // origin tab id + per-tab seq so peer tabs can dedupe duplicates that

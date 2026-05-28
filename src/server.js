@@ -48,7 +48,11 @@ function findAvailablePort(preferred) {
  */
 function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWorktreePath, mainRepoPath }) {
   const app = express();
-  app.use(express.json());
+  // Default 100 KB cap is too small once a worktree accumulates several
+  // revisions: each revision carries a `diffFingerprint` per patch, so a
+  // dozen patches × a handful of revisions easily exceeds the default and
+  // returns 413 on POST /api/state/revisions or the bulk reset.
+  app.use(express.json({ limit: '10mb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
   // Active worktree — mutable so /api/switch can change them at runtime

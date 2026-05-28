@@ -189,9 +189,11 @@ describe('draft row restored when form is closed', () => {
   });
 });
 
-// ── Draft auto-save: typing in textarea triggers POST /api/state ──────────
-// The textarea input handler must call scheduleAutoSave so drafts persist
-// across page reload. Without this, drafts live in JS memory only.
+// ── Draft auto-save: typing in textarea triggers POST /api/state/draft ────
+// The textarea input handler must POST the draft so it persists across page
+// reload.  Each draft is its own write so two tabs typing on different keys
+// cannot clobber each other (the regression Task 1 of MULTI_TAB_SYNC_PLAN.md
+// fixes).
 
 describe('typing in a comment textarea auto-saves drafts', () => {
   jest.useFakeTimers();
@@ -203,7 +205,7 @@ describe('typing in a comment textarea auto-saves drafts', () => {
 
   afterAll(() => { jest.useRealTimers(); });
 
-  test('typing in a line-comment textarea POSTs drafts to /api/state', () => {
+  test('typing in a line-comment textarea POSTs the draft to /api/state/draft', () => {
     const tr = setupTr();
     showCommentForm(tr, HASH, FILE, LINE, KEY);
 
@@ -211,15 +213,15 @@ describe('typing in a comment textarea auto-saves drafts', () => {
     textarea.value = 'typed draft';
     textarea.dispatchEvent(new Event('input'));
 
-    // 500ms debounce in scheduleAutoSave
+    // 500ms debounce in scheduleDraftSave
     jest.advanceTimersByTime(600);
 
     expect(global.fetch).toHaveBeenCalled();
     const [url, opts] = global.fetch.mock.calls[0];
-    expect(url).toBe('/api/state');
+    expect(url).toBe('/api/state/draft');
     expect(opts.method).toBe('POST');
     const body = JSON.parse(opts.body);
-    expect(body.drafts).toBeDefined();
-    expect(body.drafts[dk()]).toBe('typed draft');
+    expect(body.key).toBe(dk());
+    expect(body.text).toBe('typed draft');
   });
 });

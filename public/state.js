@@ -54,14 +54,14 @@ export function getComment(patchHash, filePath, key) {
   return ((state.comments[patchHash] || {})[filePath] || {})[key] || null;
 }
 
-// Pure mutator — caller is responsible for calling scheduleAutoSave().
+// Pure mutator — caller is responsible for calling saveCommentNow().
 export function setComment(patchHash, filePath, key, commentObj) {
   if (!state.comments[patchHash]) state.comments[patchHash] = {};
   if (!state.comments[patchHash][filePath]) state.comments[patchHash][filePath] = {};
   state.comments[patchHash][filePath][key] = commentObj;
 }
 
-// Pure mutator — caller is responsible for calling scheduleAutoSave().
+// Pure mutator — caller is responsible for calling saveCommentNow() with null.
 export function deleteComment(patchHash, filePath, key) {
   const byFile = (state.comments[patchHash] || {});
   if (byFile[filePath]) {
@@ -89,13 +89,13 @@ export function getGeneralComment(patchHash) {
   return state.generalComments[patchHash] || '';
 }
 
-// Pure mutator — caller is responsible for calling scheduleAutoSave().
+// Pure mutator — caller is responsible for calling scheduleGeneralCommentSave().
 export function setGeneralComment(patchHash, text) {
   state.generalComments[patchHash] = text;
 }
 
 // ── Deny management ────────────────────────────────────────────────────────
-// Pure mutators — callers are responsible for calling scheduleAutoSave() and triggering re-renders.
+// Pure mutators — callers are responsible for calling saveDecisionNow() and triggering re-renders.
 export function denyPatch(hash) {
   state.denied.add(hash);
 }
@@ -105,7 +105,7 @@ export function undenyPatch(hash) {
 }
 
 // ── Approve management ─────────────────────────────────────────────────────
-// Pure mutators — callers are responsible for calling scheduleAutoSave() and triggering re-renders.
+// Pure mutators — callers are responsible for calling saveDecisionNow() and triggering re-renders.
 export function approvePatch(hash) {
   state.approved.add(hash);
 }

@@ -245,6 +245,30 @@ function createApp({ worktreeName: initialWorktreeName, worktreePath: initialWor
     }
   });
 
+  // POST /api/state/revisions — { revisions, approved, denied }
+  // Used by the load-time revision-detection path which records a new revision
+  // snapshot AND migrates approved/denied hashes for amended commits.  The
+  // three fields belong together so they go in one lock-protected write.
+  app.post('/api/state/revisions', async (req, res) => {
+    const { revisions, approved, denied } = req.body || {};
+    if (!Array.isArray(revisions) || !Array.isArray(approved) || !Array.isArray(denied)) {
+      return res.status(400).json({ error: 'revisions, approved, denied must all be arrays.' });
+    }
+    const statePath = stateFilePath();
+    try {
+      await withStateLock(statePath, () => {
+        const state = readStateFile(statePath);
+        state.revisions = revisions;
+        state.approved = approved;
+        state.denied = denied;
+        atomicWriteStateFile(statePath, state);
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/state/decision — { patchHash, kind: 'approve'|'unapprove'|'deny'|'undeny' }
   // Mirrors the existing state.js mutators one-to-one.
   app.post('/api/state/decision', async (req, res) => {

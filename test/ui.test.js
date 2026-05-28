@@ -1395,6 +1395,11 @@ describe('current-prompt-bar appears after all patches reviewed and submitted', 
 
   beforeAll(async () => {
     promptBarPage = await openFreshPage();
+    // Earlier describes (e.g. submit error state) may leave approvals on
+    // disk.  Without a reset, this describe would start with patch 1 already
+    // approved and the .btn-approve selector would match only the hidden
+    // patch-2 button.
+    await resetSharedState(promptBarPage);
 
     // Approve the first patch (active by default).
     // At this point there are 0 .btn-unapprove elements, so waitForSelector is unambiguous.
@@ -2073,6 +2078,44 @@ describe('draft persistence and multi-tab sync', () => {
       Object.values(byFile).flatMap((byKey) => Object.values(byKey))
     );
     expect(allComments.find((c) => c.text === 'A saved this')).toBeTruthy();
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
+  // The headline regression for delta endpoints: two tabs saving comments on
+  // different lines at essentially the same time both persist.  Before delta
+  // endpoints, each tab's POST /api/state wrote a full snapshot and whichever
+  // tab flushed last would clobber the other.
+  test('two tabs saving comments on different lines simultaneously — both survive', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    // pageA on the first added line, pageB on a later one so the lineKey differs.
+    await pageA.locator('.line-added .ln-content').first().click();
+    await pageB.locator('.line-added .ln-content').nth(1).click();
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageB.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A on line 1');
+    await pageB.fill('.comment-form-row textarea', 'B on line 2');
+
+    // Save both as close together as the test runner allows; the delta
+    // endpoint lock + per-entry write means both must end up on disk.
+    await Promise.all([
+      pageA.click('.btn-save'),
+      pageB.click('.btn-save'),
+    ]);
+    await pageA.waitForSelector('.comment-display-row');
+    await pageB.waitForSelector('.comment-display-row');
+    await pageA.waitForTimeout(400); // let broadcast + remote sync settle
+
+    const state = await pageA.request.get(`${dpBaseUrl}/api/state`).then((r) => r.json());
+    const allComments = Object.values(state.comments).flatMap((byFile) =>
+      Object.values(byFile).flatMap((byKey) => Object.values(byKey))
+    );
+    expect(allComments.find((c) => c.text === 'A on line 1')).toBeTruthy();
+    expect(allComments.find((c) => c.text === 'B on line 2')).toBeTruthy();
 
     await pageA.close();
     await pageB.close();

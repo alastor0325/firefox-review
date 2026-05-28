@@ -1,7 +1,11 @@
 // State: direct access for orchestration
 import { state, drafts, draftKey, resetReviewState, replaceDrafts, commentsForPatch, getGeneralComment } from './state.js';
 // Persistence: save/restore + prompt bar
-import { flushSave, saveState, updateCurrentPrompt, refreshPromptBar, setSavedPromptText, initStateChannel, hasPendingSave } from './persistence.js';
+import {
+  flushSave, saveStateBulk, cancelPendingSaves,
+  updateCurrentPrompt, refreshPromptBar, setSavedPromptText,
+  initStateChannel, hasPendingSave,
+} from './persistence.js';
 // Revisions: detect changes on load
 import { diffFingerprint, migrateApprovals, detectRevisionChanges } from './revisions.js';
 // Renderer: all DOM functions + re-exportable items for tests
@@ -69,7 +73,17 @@ async function submitReview() {
     state.generalComments = {};
     state.denied = new Set();
     replaceDrafts(null);
-    await saveState();
+    // Cancel any in-flight debounced saves first — otherwise a pending draft
+    // POST would land after the bulk reset and re-create the cleared value.
+    cancelPendingSaves();
+    await saveStateBulk({
+      comments: state.comments,
+      generalComments: state.generalComments,
+      approved: [...state.approved],
+      denied: [...state.denied],
+      revisions: state.revisions,
+      drafts,
+    });
 
     renderTabs();
     initPatchNodes();

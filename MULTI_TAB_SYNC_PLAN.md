@@ -60,7 +60,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 
 ---
 
-### Task 1b — Client switches to delta POSTs [ ]
+### Task 1b — Client switches to delta POSTs [x]
 **Goal:** stop the concurrent-edit clobber by using the endpoints from Task 1a. Depends on 1a.
 
 **Client (`public/persistence.js`, `public/renderer.js`)**
@@ -80,7 +80,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 **Risk:** medium — this is the behaviour switch. Mitigated by 1a's test coverage and by keeping the bulk `POST /api/state` path for reset.
 
 **Status notes:**
-- (none yet)
+- 2026-05-27 — landed. `persistence.js` rewritten around per-field save functions backed by a `makeDebouncedSaver(url, buildBody)` helper. `revisions.js`/`renderer.js`/`app.js` callsites migrated; submit flow uses `cancelPendingSaves` + `saveStateBulk`. Added `POST /api/state/revisions` server endpoint (load-time migration). New UI regression: two tabs saving on different lines simultaneously, both survive. `current-prompt-bar` describe now calls `resetSharedState` (was implicitly relying on debounce skipping the disk write). Suite 510/510 green.
 
 ---
 
@@ -179,3 +179,4 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 Append a dated entry when a task changes status.
 
 - 2026-05-27 — Task 1a complete.
+- 2026-05-27 — Task 1b complete.

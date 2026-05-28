@@ -5,7 +5,11 @@ import {
   approvePatch, unapprovePatch, denyPatch, undenyPatch,
   COMMIT_FILE, COMMIT_KEY,
 } from './state.js';
-import { scheduleAutoSave, refreshPromptBar } from './persistence.js';
+import {
+  saveCommentNow, saveDecisionNow,
+  scheduleDraftSave, saveDraftNow, scheduleGeneralCommentSave,
+  refreshPromptBar,
+} from './persistence.js';
 import { getRevisionList } from './revisions.js';
 
 // ── DOM helpers ────────────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
 
   textarea.addEventListener('input', () => {
     drafts[dk] = textarea.value;
-    scheduleAutoSave();
+    scheduleDraftSave(dk, textarea.value);
   });
 
   formRow.querySelector('.btn-cancel').addEventListener('click', () => {
@@ -94,7 +98,7 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
 
   formRow.querySelector('.btn-discard').addEventListener('click', () => {
     delete drafts[dk];
-    scheduleAutoSave();
+    saveDraftNow(dk, null);
     formRow.remove();
   });
 
@@ -110,7 +114,10 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
       text,
     };
     setComment(patchHash, filePath, key, commentObj);
-    scheduleAutoSave();
+    // Drop the now-stale draft from disk in the same flush so a reload doesn't
+    // resurrect it after the comment has been saved.
+    saveDraftNow(dk, null);
+    saveCommentNow(patchHash, filePath, key, commentObj);
     updateSubmitButton();
     formRow.remove();
     renderCommentDisplay(tr, patchHash, filePath, line, key);
@@ -145,7 +152,7 @@ export function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
 
   displayRow.querySelector('.btn-delete-comment').addEventListener('click', () => {
     deleteComment(patchHash, filePath, key);
-    scheduleAutoSave();
+    saveCommentNow(patchHash, filePath, key, null);
     updateSubmitButton();
     displayRow.remove();
   });
@@ -253,7 +260,7 @@ export function renderCommitMessageSection(container, patchHash, commitMessage, 
       </div>`;
     commentEl.querySelector('.btn-delete-comment').addEventListener('click', () => {
       deleteComment(patchHash, COMMIT_FILE, COMMIT_KEY);
-      scheduleAutoSave();
+      saveCommentNow(patchHash, COMMIT_FILE, COMMIT_KEY, null);
       updateSubmitButton();
       refreshComment();
     });
@@ -281,12 +288,12 @@ export function renderCommitMessageSection(container, patchHash, commitMessage, 
     ta.focus();
     ta.addEventListener('input', () => {
       drafts[dk] = ta.value;
-      scheduleAutoSave();
+      scheduleDraftSave(dk, ta.value);
     });
     formEl.querySelector('.btn-cancel').addEventListener('click', () => { formEl.innerHTML = ''; refreshComment(); });
     formEl.querySelector('.btn-discard').addEventListener('click', () => {
       delete drafts[dk];
-      scheduleAutoSave();
+      saveDraftNow(dk, null);
       formEl.innerHTML = '';
       refreshComment();
     });
@@ -294,10 +301,12 @@ export function renderCommitMessageSection(container, patchHash, commitMessage, 
       const text = ta.value.trim();
       if (!text) return;
       delete drafts[dk];
-      setComment(patchHash, COMMIT_FILE, COMMIT_KEY, {
+      const commentObj = {
         patchHash, file: COMMIT_FILE, line: 0, lineContent: commitMessage, text,
-      });
-      scheduleAutoSave();
+      };
+      setComment(patchHash, COMMIT_FILE, COMMIT_KEY, commentObj);
+      saveDraftNow(dk, null);
+      saveCommentNow(patchHash, COMMIT_FILE, COMMIT_KEY, commentObj);
       updateSubmitButton();
       formEl.innerHTML = '';
       refreshComment();
@@ -836,12 +845,9 @@ export function buildPatchEl(idx) {
   approveBtn.className = isApproved ? 'btn-unapprove' : 'btn-approve';
   approveBtn.textContent = isApproved ? 'Approved ✓' : 'Approve';
   approveBtn.addEventListener('click', () => {
-    if (state.approved.has(patch.hash)) {
-      unapprovePatch(patch.hash);
-    } else {
-      approvePatch(patch.hash);
-    }
-    scheduleAutoSave();
+    const wasApproved = state.approved.has(patch.hash);
+    if (wasApproved) unapprovePatch(patch.hash); else approvePatch(patch.hash);
+    saveDecisionNow(patch.hash, wasApproved ? 'unapprove' : 'approve');
     renderTabs();
     renderCurrentPatch();
     updateSubmitButton();
@@ -852,12 +858,9 @@ export function buildPatchEl(idx) {
   denyBtn.className = isDenied ? 'btn-undeny' : 'btn-deny';
   denyBtn.textContent = isDenied ? 'Denied ✗' : 'Deny';
   denyBtn.addEventListener('click', () => {
-    if (state.denied.has(patch.hash)) {
-      undenyPatch(patch.hash);
-    } else {
-      denyPatch(patch.hash);
-    }
-    scheduleAutoSave();
+    const wasDenied = state.denied.has(patch.hash);
+    if (wasDenied) undenyPatch(patch.hash); else denyPatch(patch.hash);
+    saveDecisionNow(patch.hash, wasDenied ? 'undeny' : 'deny');
     renderTabs();
     renderCurrentPatch();
     updateSubmitButton();
@@ -984,7 +987,7 @@ export function buildPatchEl(idx) {
   if (isApproved) textarea.disabled = true;
   textarea.addEventListener('input', () => {
     setGeneralComment(patch.hash, textarea.value);
-    scheduleAutoSave();
+    scheduleGeneralCommentSave(patch.hash, textarea.value);
     updateSubmitButton();
   });
 

@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { scheduleAutoSave } from './persistence.js';
+import { saveRevisionsNow } from './persistence.js';
 
 // ── Revision detection ─────────────────────────────────────────────────────
 
@@ -73,9 +73,12 @@ export function detectRevisionChanges() {
   }));
 
   if (!lastRevision) {
-    // First time — record baseline, nothing to compare against
+    // First time — record baseline, nothing to compare against.
+    // approved/denied are passed along too; migrateApprovals is deterministic
+    // given the same prev/curr snapshots, so two tabs racing this write end
+    // up writing the same sets.
     state.revisions.push({ savedAt: new Date().toISOString(), patches: currentSnapshot });
-    scheduleAutoSave();
+    saveRevisionsNow(state.revisions, [...state.approved], [...state.denied]);
     return;
   }
 
@@ -98,7 +101,7 @@ export function detectRevisionChanges() {
     state.denied   = migrated.denied;
     state.revisions.push({ savedAt: new Date().toISOString(), patches: currentSnapshot });
     if (state.revisions.length > 10) state.revisions = state.revisions.slice(-10);
-    scheduleAutoSave();
+    saveRevisionsNow(state.revisions, [...state.approved], [...state.denied]);
   }
 }
 

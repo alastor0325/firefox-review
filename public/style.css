@@ -288,11 +288,16 @@ button { font-family: inherit; }
 }
 
 #autosave-status {
+  /* Reserve a fixed slot so cycling between "", "Saving…", "Saved", and
+     "Save failed" doesn't shift the rest of the header. */
+  display: block;
+  width: 90px;
+  min-height: 1.5em;
+  line-height: 1.5;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--ink-faint);
   letter-spacing: 0.02em;
-  min-width: 60px;
   text-align: right;
 }
 

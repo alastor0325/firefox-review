@@ -75,13 +75,16 @@ describe('renderDraftDisplay', () => {
     expect(tr.nextElementSibling).toBeNull();
   });
 
-  test('does not insert a row when a saved comment exists for the line', () => {
+  test('renders the draft row even when a saved comment exists (pending-edit stays visible)', () => {
     const tr = setupTr();
-    drafts[dk()] = 'Draft text';
+    drafts[dk()] = 'Edited draft';
     state.comments = { [HASH]: { [FILE]: { [KEY]: { text: 'Saved', line: 10 } } } };
     renderDraftDisplay(tr, HASH, FILE, LINE, KEY);
 
-    expect(tr.nextElementSibling).toBeNull();
+    const next = tr.nextElementSibling;
+    expect(next).not.toBeNull();
+    expect(next.classList.contains('comment-draft-row')).toBe(true);
+    expect(next.textContent).toContain('Edited draft');
   });
 
   test('replaces existing draft row with updated content on re-render', () => {

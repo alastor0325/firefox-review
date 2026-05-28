@@ -565,6 +565,30 @@ describe('server HTTP integration', () => {
     expect(body.generalComments).toEqual({ h1: 'overall LGTM' });
   });
 
+  // Drafts and saved comments live in independent slots in the state file —
+  // when both exist for the SAME (patchHash, file, key) the API must return
+  // both.  The UI relies on this so a pending edit of a saved comment can
+  // be restored after a page reload.
+  test('GET /api/state returns drafts and comments separately for the same key', async () => {
+    await resetState();
+    const patchHash = 'h-edit';
+    const file = 'a.js';
+    const key = 'n7';
+    const dk = `${patchHash}/${file}/${key}`;
+    // Save a real comment.
+    await httpRequest(`${baseUrl}/api/state/comment`, {
+      method: 'POST',
+      body: { patchHash, file, key, comment: { patchHash, file, line: 7, lineContent: '', text: 'final' } },
+    });
+    // Save a draft for the SAME key (pending edit).
+    await httpRequest(`${baseUrl}/api/state/draft`, {
+      method: 'POST', body: { key: dk, text: 'final EDIT' },
+    });
+    const { body } = await httpRequest(`${baseUrl}/api/state`);
+    expect(body.comments[patchHash][file][key].text).toBe('final');
+    expect(body.drafts[dk]).toBe('final EDIT');
+  });
+
   test('POST /api/state/draft stores text; null deletes the entry', async () => {
     await resetState();
     await httpRequest(`${baseUrl}/api/state/draft`, {

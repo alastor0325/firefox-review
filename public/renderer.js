@@ -51,12 +51,28 @@ export function updateSubmitButton() {
 }
 
 // ── Inline comment form ────────────────────────────────────────────────────
+// When a form closes (cancel, click elsewhere, click same line again), the
+// line needs to fall back to whatever indicator best reflects current state.
+// Draft wins so a pending edit of a saved comment is still discoverable —
+// otherwise both the saved-comment-display row (removed when the form
+// opened) AND the draft row would be invisible and the user has no idea
+// where their unsaved typing went.
+export function restoreLineDisplay(trLine, patchHash, filePath, line, key) {
+  const dk = draftKey(patchHash, filePath, key);
+  const draftText = drafts[dk];
+  if (draftText && draftText.trim()) {
+    renderDraftDisplay(trLine, patchHash, filePath, line, key);
+  } else if (getComment(patchHash, filePath, key)) {
+    renderCommentDisplay(trLine, patchHash, filePath, line, key);
+  }
+}
+
 export function removeExistingForm() {
   const existing = $('.comment-form-row');
   if (existing) {
     const ctx = existing._draftContext;
     existing.remove();
-    if (ctx) renderDraftDisplay(ctx.tr, ctx.patchHash, ctx.filePath, ctx.line, ctx.key);
+    if (ctx) restoreLineDisplay(ctx.tr, ctx.patchHash, ctx.filePath, ctx.line, ctx.key);
   }
 }
 
@@ -93,7 +109,7 @@ export function showCommentForm(tr, patchHash, filePath, line, key) {
 
   formRow.querySelector('.btn-cancel').addEventListener('click', () => {
     formRow.remove();
-    renderDraftDisplay(tr, patchHash, filePath, line, key);
+    restoreLineDisplay(tr, patchHash, filePath, line, key);
   });
 
   formRow.querySelector('.btn-discard').addEventListener('click', () => {
@@ -165,16 +181,18 @@ export function renderCommentDisplay(trLine, patchHash, filePath, line, key) {
 }
 
 export function renderDraftDisplay(trLine, patchHash, filePath, line, key) {
-  // Remove any existing draft row for this line first
+  // Remove any existing draft row OR (stale) comment-display row for this
+  // line first.  The draft row always replaces them because draft text
+  // represents the user's latest unsaved intent — including unsaved edits
+  // of a previously saved comment.
   const next = trLine.nextElementSibling;
-  if (next && next.classList.contains('comment-draft-row') && next.dataset.lineKey === key) {
+  if (next && (next.classList.contains('comment-draft-row') || next.classList.contains('comment-display-row')) && next.dataset.lineKey === key) {
     next.remove();
   }
 
   const dk = draftKey(patchHash, filePath, key);
   const text = drafts[dk];
   if (!text || !text.trim()) return;
-  if (getComment(patchHash, filePath, key)) return; // saved comment takes precedence
 
   const lineNum = line.newLineNum != null ? line.newLineNum : line.oldLineNum;
   const displayRow = document.createElement('tr');
@@ -233,22 +251,24 @@ export function renderCommitMessageSection(container, patchHash, commitMessage, 
   function refreshComment() {
     commentEl.innerHTML = '';
     commentEl.className = '';
+    // Draft wins: a pending edit of an already-saved commit-message comment
+    // must stay discoverable, otherwise opening the form to tweak it and
+    // clicking away looks like the typing was thrown away.
+    const draftText = drafts[draftKey(patchHash, COMMIT_FILE, COMMIT_KEY)];
     const c = getComment(patchHash, COMMIT_FILE, COMMIT_KEY);
-    if (!c) {
-      const draftText = drafts[draftKey(patchHash, COMMIT_FILE, COMMIT_KEY)];
-      if (draftText && draftText.trim()) {
-        commentEl.className = 'comment-draft-row';
-        commentEl.innerHTML = `
-          <div class="comment-draft-inner" style="cursor:pointer">
-            <div style="flex:1">
-              <div class="comment-meta"><span class="draft-badge">Draft</span> Commit message</div>
-              <div class="comment-body comment-draft-body">${escapeHtml(draftText)}</div>
-            </div>
-          </div>`;
-        commentEl.querySelector('.comment-draft-inner').addEventListener('click', showForm);
-      }
+    if (draftText && draftText.trim()) {
+      commentEl.className = 'comment-draft-row';
+      commentEl.innerHTML = `
+        <div class="comment-draft-inner" style="cursor:pointer">
+          <div style="flex:1">
+            <div class="comment-meta"><span class="draft-badge">Draft</span> Commit message</div>
+            <div class="comment-body comment-draft-body">${escapeHtml(draftText)}</div>
+          </div>
+        </div>`;
+      commentEl.querySelector('.comment-draft-inner').addEventListener('click', showForm);
       return;
     }
+    if (!c) return;
     commentEl.className = 'comment-display-row';
     commentEl.innerHTML = `
       <div class="comment-display-inner">
@@ -525,7 +545,7 @@ export function renderFile(fileData, patchHash) {
         if (next && next.classList.contains('comment-form-row')) {
           const ctx = next._draftContext;
           next.remove();
-          if (ctx) renderDraftDisplay(ctx.tr, ctx.patchHash, ctx.filePath, ctx.line, ctx.key);
+          if (ctx) restoreLineDisplay(ctx.tr, ctx.patchHash, ctx.filePath, ctx.line, ctx.key);
           return;
         }
         removeExistingForm();
@@ -534,11 +554,9 @@ export function renderFile(fileData, patchHash) {
 
       table.appendChild(tr);
 
-      if (getComment(patchHash, filePath, key)) {
-        renderCommentDisplay(tr, patchHash, filePath, line, key);
-      } else {
-        renderDraftDisplay(tr, patchHash, filePath, line, key);
-      }
+      // Initial render — draft wins so reloading the page never hides a
+      // pending edit behind the older saved-comment row.
+      restoreLineDisplay(tr, patchHash, filePath, line, key);
     }
 
     // After the last hunk: expand row for remaining lines to end of file
@@ -1254,7 +1272,8 @@ export function setFileNavCollapsed(v) { fileNavCollapsed = v; }
 if (typeof module !== 'undefined') {
   module.exports = {
     patchEls, updateSubmitButton, removeExistingForm, showCommentForm,
-    renderCommentDisplay, renderDraftDisplay, renderCommitMessageSection,
+    renderCommentDisplay, renderDraftDisplay, restoreLineDisplay,
+    renderCommitMessageSection,
     renderExpandRow, countStats, renderFile,
     renderTabs, switchPatch,
     buildNavItemsEl, activateFileNav, renderFileNav,

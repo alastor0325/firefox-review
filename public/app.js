@@ -18,6 +18,7 @@ import { diffFingerprint, migrateApprovals, detectRevisionChanges } from './revi
 import {
   patchEls, updateSubmitButton, removeExistingForm, showCommentForm,
   renderDraftDisplay, renderCommentDisplay, renderCommitMessageSection,
+  restoreLineDisplay,
   renderFileNav, renderFile,
   renderTabs, switchPatch, buildPatchEl, renderCurrentPatch, initPatchNodes,
   addDragScroll, initTabsDragScroll, getFileNavCollapsed, setFileNavCollapsed,
@@ -363,7 +364,7 @@ function applyRemoteComment({ patchHash, file, key, value }) {
           && next.dataset.lineKey === key) {
         next.remove();
       }
-      if (value === null) renderDraftDisplay(tr, patchHash, file, line, key);
+      if (value === null) restoreLineDisplay(tr, patchHash, file, line, key);
       else renderCommentDisplay(tr, patchHash, file, line, key);
     }
   }
@@ -391,14 +392,19 @@ function applyRemoteDraft({ key, value }) {
 
   const { tr } = findLineTr(patchHash, filePath, lineKeyStr);
   if (!tr || lineFormOpen(tr, lineKeyStr)) return;
-  if (getComment(patchHash, filePath, lineKeyStr)) return; // saved comment takes precedence
 
-  const next = tr.nextElementSibling;
-  if (next && next.classList.contains('comment-draft-row') && next.dataset.lineKey === lineKeyStr) {
-    next.remove();
-  }
+  // Draft wins over a saved comment on the same line, so a pending edit
+  // stays discoverable even when a saved version exists.
+  const line = lineObjForKey(lineKeyStr);
   if (value && value.trim()) {
-    renderDraftDisplay(tr, patchHash, filePath, lineObjForKey(lineKeyStr), lineKeyStr);
+    renderDraftDisplay(tr, patchHash, filePath, line, lineKeyStr);
+  } else {
+    // Remote cleared the draft.  Fall back to the saved comment row if any.
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('comment-draft-row') && next.dataset.lineKey === lineKeyStr) {
+      next.remove();
+    }
+    restoreLineDisplay(tr, patchHash, filePath, line, lineKeyStr);
   }
 }
 

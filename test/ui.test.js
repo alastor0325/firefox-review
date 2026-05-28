@@ -1473,20 +1473,31 @@ describe('inline comment edit — re-open shows original text', () => {
     expect(value).toBe('Original comment text');
   });
 
-  test('canceling the edit form does not lose the saved comment', async () => {
+  test('canceling the edit form keeps the in-progress draft visible AND preserves the saved comment on disk', async () => {
     // Still in edit form from previous test — type new text then cancel
     await editPage.fill('.comment-form-row textarea', 'Changed text');
     await editPage.click('.btn-cancel');
     await editPage.waitForFunction(() => !document.querySelector('.comment-form-row'));
 
-    // Approve then unapprove to trigger renderCurrentPatch() and re-show comment display
-    await editPage.click('.btn-approve');
-    await editPage.waitForSelector('.btn-unapprove');
-    await editPage.click('.btn-unapprove');
-    await editPage.waitForSelector('.btn-approve');
-    await editPage.waitForSelector('.comment-display-row');
+    // The cancel does NOT save, but the in-progress edit is still the
+    // user's latest intent — show it as a draft row so they can find it.
+    await editPage.waitForSelector('.comment-draft-row');
+    const draftBody = await editPage.textContent('.comment-draft-row .comment-body');
+    expect(draftBody).toContain('Changed text');
 
-    expect(await editPage.textContent('.comment-body')).toBe('Original comment text');
+    // And the saved comment hasn't been touched on disk.
+    const state = await editPage.request.get(`${baseUrl}/api/state`).then((r) => r.json());
+    const allComments = Object.values(state.comments).flatMap((byFile) =>
+      Object.values(byFile).flatMap((byKey) => Object.values(byKey))
+    );
+    expect(allComments.find((c) => c.text === 'Original comment text')).toBeTruthy();
+
+    // Cleanup: explicitly discard the draft so subsequent describes don't
+    // see it bleed across.
+    await editPage.click('.comment-draft-row .comment-draft-inner');
+    await editPage.waitForSelector('.comment-form-row textarea');
+    await editPage.click('.btn-discard');
+    await editPage.waitForFunction(() => !document.querySelector('.comment-form-row'));
   });
 });
 
@@ -1986,6 +1997,43 @@ describe('draft persistence and multi-tab sync', () => {
     expect(await p.textContent('.comment-draft-row .comment-body')).toContain('WIP draft text');
     await p.close();
   }, 20000);
+
+  // Regression: editing a saved comment and clicking another line used to
+  // leave the original line blank — the saved-comment row was removed when
+  // the form opened, and renderDraftDisplay bailed because a saved comment
+  // existed.  The user's in-progress edit was invisible.
+  test('edit a saved comment, click another line — draft stays visible on the original line', async () => {
+    const p = await openDpPage();
+    await resetDpState(p);
+
+    // 1. Save an initial comment on line 0.
+    const lines = p.locator('.line-added .ln-content');
+    await lines.first().click();
+    await p.waitForSelector('.comment-form-row textarea');
+    await p.fill('.comment-form-row textarea', 'Original');
+    await p.click('.btn-save');
+    await p.waitForSelector('.comment-display-row');
+
+    // 2. Click the saved-comment body to open it for editing.
+    await p.locator('.comment-display-row .comment-body').first().click();
+    await p.waitForSelector('.comment-form-row textarea');
+
+    // 3. Type an edit (do NOT save).
+    const ta = p.locator('.comment-form-row textarea');
+    await ta.press('End');
+    await ta.type(' EDIT');
+    await p.waitForTimeout(600); // let the debounced draft save settle
+
+    // 4. Click on a different added line — the form moves, the edit must
+    //    remain visible as a draft row on the original line.
+    await lines.nth(1).click();
+    await p.waitForSelector('.comment-form-row textarea'); // form opens on the new line
+    await p.waitForTimeout(200);
+
+    const draftBodies = await p.locator('.comment-draft-row .comment-body').allTextContents();
+    expect(draftBodies.some((t) => t.includes('Original') && t.includes('EDIT'))).toBe(true);
+    await p.close();
+  }, 25000);
 
   test('commit-message draft survives page reload', async () => {
     const p = await openDpPage();

@@ -10,7 +10,7 @@ import {
 import {
   flushSave, saveStateBulk, cancelPendingSaves,
   updateCurrentPrompt, refreshPromptBar, setSavedPromptText,
-  initStateChannel, hasPendingSave,
+  initStateChannel, hasPendingSave, maybeCatchupOnVisible,
 } from './persistence.js';
 // Revisions: detect changes on load
 import { diffFingerprint, migrateApprovals, detectRevisionChanges } from './revisions.js';
@@ -461,7 +461,7 @@ function applyRemoteGeneralComment({ patchHash, value }) {
 }
 
 function applyRemoteDelta(delta) {
-  if (!delta || delta.kind === 'bulk' || delta.kind === 'revisions') {
+  if (!delta || delta.kind === 'bulk' || delta.kind === 'revisions' || delta.kind === 'catchup') {
     return fullRefresh();
   }
   try {
@@ -478,10 +478,18 @@ function applyRemoteDelta(delta) {
 }
 
 // Full state refetch + re-render — the safety net for unknown deltas, bulk
-// resets, and revision migrations.  Skipped if we have pending typed text:
-// our own debounce will fire next and bring everyone back in sync.
+// resets, revision migrations, and SSE-reconnect catchups.  If we currently
+// have debounced typed text in flight, defer the refresh so we don't yank
+// the user's open form away mid-typing; retry shortly.
+let _refreshDeferred = false;
 async function fullRefresh() {
-  if (hasPendingSave()) return;
+  if (hasPendingSave()) {
+    if (!_refreshDeferred) {
+      _refreshDeferred = true;
+      setTimeout(() => { _refreshDeferred = false; fullRefresh(); }, 800);
+    }
+    return;
+  }
   try {
     const res = await fetch('/api/state');
     if (!res.ok) return;
@@ -531,6 +539,13 @@ async function init() {
   $('#btn-reload-page').addEventListener('click', async () => {
     $('#update-banner').style.display = 'none';
     await loadAndRender();
+  });
+
+  // Tab background suspension can throttle EventSource delivery on some
+  // browsers.  If the SSE saw an error while we were hidden, reconcile when
+  // the tab is shown again.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') maybeCatchupOnVisible();
   });
 
   await initWorktreeBar(); // awaited so hash-based switch completes before first render

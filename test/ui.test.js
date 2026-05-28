@@ -2220,6 +2220,57 @@ describe('draft persistence and multi-tab sync', () => {
     await pageB.close();
   }, 25000);
 
+  // Three tabs, mixed sequence of edits, then assert each tab's DOM and the
+  // server's JSON state all agree.  This is the plan's Task 4 end-to-end
+  // consistency check — the broadest "do all transports keep N tabs in
+  // lockstep?" assertion.
+  test('three tabs editing concurrently end in identical state on every tab and on disk', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+    const pageC = await openDpPage();
+
+    // A on line 1
+    await pageA.locator('.line-added .ln-content').first().click();
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A1');
+    await pageA.click('.btn-save');
+    await pageA.waitForSelector('.comment-display-row');
+
+    // B on line 2
+    await pageB.locator('.line-added .ln-content').nth(1).click();
+    await pageB.waitForSelector('.comment-form-row textarea');
+    await pageB.fill('.comment-form-row textarea', 'B2');
+    await pageB.click('.btn-save');
+    await pageB.waitForSelector('.comment-display-row');
+
+    // C approves
+    await pageC.click('.btn-approve');
+    await pageC.waitForSelector('.btn-unapprove');
+
+    // Let SSE deliver to all peers.
+    await pageA.waitForTimeout(600);
+
+    const state = await pageA.request.get(`${dpBaseUrl}/api/state`).then((r) => r.json());
+    expect(state.approved).toContain((await pageA.locator('.patch-heading-hash').first().textContent()).trim());
+    const allComments = Object.values(state.comments).flatMap((byFile) =>
+      Object.values(byFile).flatMap((byKey) => Object.values(byKey))
+    );
+    expect(allComments.find((c) => c.text === 'A1')).toBeTruthy();
+    expect(allComments.find((c) => c.text === 'B2')).toBeTruthy();
+
+    // Every tab should show both comment rows and the approved state.
+    for (const p of [pageA, pageB, pageC]) {
+      await p.waitForSelector('.comment-display-row', { timeout: 5000 });
+      expect(await p.locator('.comment-display-row').count()).toBe(2);
+      expect(await p.locator('.btn-unapprove').count()).toBe(1);
+    }
+
+    await pageA.close();
+    await pageB.close();
+    await pageC.close();
+  }, 30000);
+
   // Two separate browser contexts do NOT share a BroadcastChannel, so this
   // test proves the SSE transport delivers cross-window/cross-machine.
   test('cross-context sync via SSE: save in A visible in B without reload', async () => {

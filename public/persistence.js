@@ -6,25 +6,69 @@ import { state, allPatchesFinished } from './state.js';
 // subscribers for the same worktree.  Each subscriber filters out events
 // whose `_from` matches its own TAB_ID so the originator doesn't replay
 // the event it just authored.
+//
+// Each event also carries `_version` — a monotonic per-server-lifetime
+// counter.  On SSE reconnect the server sends a fresh `hello` event with
+// its current `_version`; if the client missed events during the drop
+// (or the server restarted, resetting to 0), the client emits a synthetic
+// `catchup` delta so the app refetches `/api/state` and reconciles.
 let stateEvents = null;
+let stateEventsCallback = null;
 const TAB_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Visibility-driven catchup state: shared across the lifetime of one
+// EventSource because EventSource handles its own auto-reconnect without
+// calling us back, so we record any error and act on visibility change.
+let sawDisconnect = false;
 
 export function initStateChannel(worktreeName, onRemoteDelta) {
   closeStateChannel();
   if (typeof EventSource === 'undefined') return null;
+  stateEventsCallback = onRemoteDelta;
   stateEvents = new EventSource('/api/state/events');
+  let sawHello = false;
+  let lastSeenVersion = 0;
   stateEvents.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
-    if (!data || data.kind === 'hello') return;
+    if (!data) return;
+    if (data.kind === 'hello') {
+      // Reconnect: if the server has advanced past our last seen version,
+      // or rolled back (restart), we may have missed events — catch up.
+      // Skip on the very first hello of this page load.
+      if (sawHello && data._version !== lastSeenVersion) {
+        onRemoteDelta({ kind: 'catchup' });
+      }
+      sawHello = true;
+      lastSeenVersion = data._version || 0;
+      sawDisconnect = false;
+      return;
+    }
+    // Own writes still advance the server counter — track them too so the
+    // next hello's comparison is against the true last-seen version.
+    if (data._version && data._version > lastSeenVersion) lastSeenVersion = data._version;
     if (data._from === TAB_ID) return;
     onRemoteDelta(data);
   };
+  stateEvents.onerror = () => { sawDisconnect = true; };
   return stateEvents;
 }
 
 export function closeStateChannel() {
   if (stateEvents) { stateEvents.close(); stateEvents = null; }
+  stateEventsCallback = null;
+  sawDisconnect = false;
+}
+
+// Called from app.js visibility handler.  If the EventSource was ever in an
+// error state while the tab was hidden, defensively trigger a catchup —
+// browsers may throttle background EventSource delivery so events could have
+// been silently dropped.
+export function maybeCatchupOnVisible() {
+  if (sawDisconnect && stateEventsCallback) {
+    sawDisconnect = false;
+    stateEventsCallback({ kind: 'catchup' });
+  }
 }
 
 // ── Save-status indicator ──────────────────────────────────────────────────
@@ -199,7 +243,7 @@ if (typeof module !== 'undefined') {
     scheduleDraftSave, saveDraftNow, scheduleGeneralCommentSave,
     saveStateBulk,
     flushSave, hasPendingSave, cancelPendingSaves,
-    initStateChannel, closeStateChannel,
+    initStateChannel, closeStateChannel, maybeCatchupOnVisible,
     updateCurrentPrompt, refreshPromptBar, getSavedPromptText, setSavedPromptText,
   };
 }

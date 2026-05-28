@@ -153,7 +153,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 
 ---
 
-### Task 4 — Consistency sweep [ ]
+### Task 4 — Consistency sweep [x]
 **Goal:** defensive recovery for dropped events / restarts. Depends on Task 3b.
 
 - Client tracks last-seen `version`; on SSE reconnect or `visibilitychange → visible`, if server `version` is ahead, do one `GET /api/state` and reconcile targeted (re-render only what changed).
@@ -162,7 +162,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 **Risk:** none — purely additive recovery.
 
 **Status notes:**
-- (none yet)
+- 2026-05-27 — landed. SSE `onmessage` tracks `lastSeenVersion`; any subsequent `hello` whose `_version` doesn't match emits a synthetic `{kind:'catchup'}` delta which `applyRemoteDelta` funnels into `fullRefresh()`. `fullRefresh` now defers (800 ms re-try) if there is pending debounced typing instead of dropping the refresh on the floor. SSE `onerror` sets a `sawDisconnect` flag; the visibilitychange→visible handler in `app.js` calls `maybeCatchupOnVisible()` which emits catchup if the connection had errored while the tab was hidden. New tests: 7 unit tests in `test/catchup.test.js` (first-hello/no-change/advance/restart/own-events/remount/visibility), an integration test for the server's `_version` monotonicity in hello + deltas, and a 3-tab Playwright consistency check covering "mixed edits on three tabs end in identical state on every tab and on disk".
 
 ---
 
@@ -183,3 +183,4 @@ Append a dated entry when a task changes status.
 - 2026-05-27 — Task 2 complete.
 - 2026-05-27 — Task 3a complete.
 - 2026-05-27 — Task 3b complete.
+- 2026-05-27 — Task 4 complete.  All six tasks done.  This plan file can be deleted after a final review pass.

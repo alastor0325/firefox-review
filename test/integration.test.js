@@ -678,6 +678,50 @@ describe('server HTTP integration', () => {
     expect(aDelta._version).toBe(bDelta._version);
   });
 
+  // The server's `_version` counter advances on every write.  A reconnecting
+  // client uses the hello event's _version to decide whether it missed any
+  // events while disconnected (Task 4 consistency sweep).
+  test('hello event reports the current _version; later deltas carry incremented _version', async () => {
+    await resetState();
+    function openListener() {
+      return new Promise((resolve) => {
+        const events = [];
+        const req = http.get(`${baseUrl}/api/state/events`, (res) => {
+          let buf = '';
+          res.on('data', (chunk) => {
+            buf += chunk;
+            const parts = buf.split('\n\n');
+            buf = parts.pop();
+            for (const part of parts) {
+              if (part.startsWith('data: ')) {
+                try { events.push(JSON.parse(part.slice(6))); } catch {}
+              }
+            }
+          });
+        });
+        setTimeout(() => resolve({ req, events }), 150);
+      });
+    }
+    const a = await openListener();
+    const hello = a.events.find((e) => e.kind === 'hello');
+    expect(hello).toBeTruthy();
+    const before = hello._version;
+
+    await httpRequest(`${baseUrl}/api/state/general-comment`, {
+      method: 'POST', body: { patchHash: 'h-v', text: 'one' },
+    });
+    await httpRequest(`${baseUrl}/api/state/general-comment`, {
+      method: 'POST', body: { patchHash: 'h-v', text: 'two' },
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    a.req.destroy();
+
+    const deltas = a.events.filter((e) => e.kind === 'general-comment');
+    expect(deltas).toHaveLength(2);
+    expect(deltas[0]._version).toBe(before + 1);
+    expect(deltas[1]._version).toBe(before + 2);
+  });
+
   // After a client disconnects, its subscriber slot must be released; if it
   // weren't, publishStateEvent would try to write to a dead socket forever.
   test('SSE subscriber slot is released when the client disconnects', async () => {

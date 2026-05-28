@@ -213,10 +213,12 @@ button { font-family: inherit; }
 }
 
 #header h1 .app-name {
-  font-family: var(--font-sans);
-  font-size: 26px;
+  /* Wordmark in mono so it reads as a code-tool logotype, distinct from
+     the surrounding sans UI chrome. */
+  font-family: var(--font-mono);
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.06em;
   line-height: 1;
   color: var(--ink);
   text-decoration: none;

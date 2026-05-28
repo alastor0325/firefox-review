@@ -496,13 +496,15 @@ describe('server HTTP integration', () => {
     expect(body).toMatch(/#autosave-status\s*{[^}]*min-height:\s*1\.5em/);
   });
 
-  // The "Revue" wordmark anchors the header's visual balance against the
-  // Generate Review Prompt button on the right.  A small (≤18 px) wordmark
-  // looks lost next to the filled button; the chosen size is the contract.
-  test('GET /style.css renders the Revue wordmark at the masthead size', async () => {
+  // The "Revue" wordmark is intentionally set in the mono font so the
+  // masthead reads as a code-tool logotype (matching the worktree path
+  // immediately below it).  Both the family and the masthead size are the
+  // contract.
+  test('GET /style.css renders the Revue wordmark in mono at the masthead size', async () => {
     const { status, body } = await httpRequest(`${baseUrl}/style.css`);
     expect(status).toBe(200);
-    expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-size:\s*26px/);
+    expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-family:\s*var\(--font-mono\)/);
+    expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-size:\s*24px/);
     expect(body).toMatch(/#header h1 \.app-name\s*{[^}]*font-weight:\s*700/);
   });
 

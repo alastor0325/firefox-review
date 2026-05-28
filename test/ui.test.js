@@ -2373,18 +2373,21 @@ describe('docs/index.html interactive demo', () => {
   }, 30000);
 
   // The "Revue" wordmark is the masthead — it must render visibly larger
-  // than the inline #bug-id-display next to it so the header has a clear
-  // visual anchor.  A regression that shrinks the wordmark (e.g. someone
-  // resets font-size on .app-name) would be caught here.
-  test('.app-name wordmark renders larger than the inline worktree id', async () => {
+  // than the inline #bug-id-display next to it, and it must be set in the
+  // mono font so it reads as a logotype for a code-review tool.  A
+  // regression that shrinks the wordmark or swaps the family back to sans
+  // would be caught here.
+  test('.app-name wordmark is rendered larger and in the mono family', async () => {
     const wordmark = await demoPage.locator('.app-name').boundingBox();
     const bugId    = await demoPage.locator('#bug-id-display').boundingBox();
-    expect(wordmark.height).toBeGreaterThanOrEqual(22);
+    expect(wordmark.height).toBeGreaterThanOrEqual(20);
     expect(wordmark.height).toBeGreaterThan(bugId.height + 4);
-    const wordmarkSize = await demoPage.locator('.app-name').evaluate((el) =>
-      parseFloat(getComputedStyle(el).fontSize)
-    );
-    expect(wordmarkSize).toBe(26);
+    const computed = await demoPage.locator('.app-name').evaluate((el) => ({
+      fontSize: parseFloat(getComputedStyle(el).fontSize),
+      fontFamily: getComputedStyle(el).fontFamily,
+    }));
+    expect(computed.fontSize).toBe(24);
+    expect(computed.fontFamily).toMatch(/JetBrains Mono/i);
   }, 30000);
 
   // The autosave indicator must occupy the same box regardless of which

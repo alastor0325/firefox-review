@@ -2083,6 +2083,105 @@ describe('draft persistence and multi-tab sync', () => {
     await pageB.close();
   }, 25000);
 
+  // Cross-tab approval should propagate the new state to peer tabs without
+  // requiring a reload: button labels, diff readonly, GC textarea disabled.
+  test('approve in tab A propagates to tab B without reload', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    await pageA.click('.btn-approve');
+    await pageA.waitForSelector('.btn-unapprove');
+    await pageB.waitForSelector('.btn-unapprove', { timeout: 5000 });
+    expect(await pageB.locator('.btn-unapprove').textContent()).toContain('Approved');
+    expect(await pageB.locator('.general-comment-textarea').isDisabled()).toBe(true);
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
+  // Tab B has a comment form open on the same line tab A is about to mutate.
+  // The form-open guard must prevent B's form (and its typing) from being
+  // ripped out from under the user.
+  test('open form on the same line survives a remote save on that line', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    // pageB opens a form on the first added line and starts typing.
+    await pageB.locator('.line-added .ln-content').first().click();
+    await pageB.waitForSelector('.comment-form-row textarea');
+    await pageB.locator('.comment-form-row textarea').type('B mid-typing');
+
+    // pageA also targets the same first added line and saves a comment.
+    await pageA.locator('.line-added .ln-content').first().click();
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A saves first');
+    await pageA.click('.btn-save');
+    await pageA.waitForSelector('.comment-display-row');
+    await pageB.waitForTimeout(400);
+
+    // B's form must still be present and hold the original text.
+    expect(await pageB.locator('.comment-form-row textarea').inputValue()).toBe('B mid-typing');
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
+  // Tab B has an open comment form mid-typing on line L1.  Tab A saves a
+  // comment on a DIFFERENT line.  Tab B's open form (and its in-progress
+  // text) must survive the broadcast — Task 2's open-form-preservation.
+  test('open comment form survives a remote save on a different line', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    // pageB opens a form on the first added line and starts typing.
+    await pageB.locator('.line-added .ln-content').first().click();
+    await pageB.waitForSelector('.comment-form-row textarea');
+    await pageB.locator('.comment-form-row textarea').type('typing in B');
+
+    // pageA saves a real comment on a different added line.
+    await pageA.locator('.line-added .ln-content').nth(1).click();
+    await pageA.waitForSelector('.comment-form-row textarea');
+    await pageA.fill('.comment-form-row textarea', 'A on line 2');
+    await pageA.click('.btn-save');
+    await pageA.waitForSelector('.comment-display-row');
+    await pageB.waitForTimeout(400); // give the broadcast time to land in B
+
+    // B's form should still be open with the original text.
+    const taValue = await pageB.locator('.comment-form-row textarea').inputValue();
+    expect(taValue).toBe('typing in B');
+    // And A's comment should be visible in B's DOM on the OTHER line.
+    expect(await pageB.locator('.comment-display-row').count()).toBe(1);
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
+  // Tab B has the general-comment textarea focused and is typing.  Tab A
+  // changes the same patch's general comment.  B's typing must survive.
+  test('focused general-comment textarea is not stomped by a remote update', async () => {
+    const pageA = await openDpPage();
+    await resetDpState(pageA);
+    const pageB = await openDpPage();
+
+    // Focus and type in B's general-comment textarea.
+    await pageB.locator('.general-comment-textarea').focus();
+    await pageB.locator('.general-comment-textarea').type('B is typing here');
+
+    // A also types into the general-comment textarea; the debounce posts it.
+    await pageA.locator('.general-comment-textarea').fill('A overwrote');
+    await pageA.waitForTimeout(800); // 500 ms debounce + buffer for broadcast
+
+    // B's value must be its own typing, not A's.
+    const bVal = await pageB.locator('.general-comment-textarea').inputValue();
+    expect(bVal).toBe('B is typing here');
+
+    await pageA.close();
+    await pageB.close();
+  }, 25000);
+
   // The headline regression for delta endpoints: two tabs saving comments on
   // different lines at essentially the same time both persist.  Before delta
   // endpoints, each tab's POST /api/state wrote a full snapshot and whichever

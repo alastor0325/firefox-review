@@ -84,7 +84,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 
 ---
 
-### Task 2 — Targeted DOM application [ ]
+### Task 2 — Targeted DOM application [x]
 **Goal:** stop the open-form clobber. Depends on 1b.
 
 **Transport tweak**
@@ -107,7 +107,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 **Risk:** low — fallback ensures we never do worse than today.
 
 **Status notes:**
-- (none yet)
+- 2026-05-27 — landed. `BroadcastChannel` payload now carries `{type:'delta', delta}` (bulk saves use `{kind:'bulk'}`). `applyRemoteDelta` in `app.js` dispatches to targeted handlers for comment / draft / decision / general-comment; unknown kinds and bulk/revisions fall back to `fullRefresh()`. Open comment forms, focused general-comment textareas, and open commit-message forms are all skipped. Approve/deny also re-renders the patch's commit-message block so its disabled-closure stays consistent. Four new UI tests: cross-tab approve, same-line open form preserved, different-line open form preserved, focused GC textarea preserved. Suite 514/514 green.
 
 ---
 
@@ -180,3 +180,4 @@ Append a dated entry when a task changes status.
 
 - 2026-05-27 — Task 1a complete.
 - 2026-05-27 — Task 1b complete.
+- 2026-05-27 — Task 2 complete.

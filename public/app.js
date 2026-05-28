@@ -1,5 +1,11 @@
 // State: direct access for orchestration
-import { state, drafts, draftKey, resetReviewState, replaceDrafts, commentsForPatch, getGeneralComment } from './state.js';
+import {
+  state, drafts, draftKey, resetReviewState, replaceDrafts,
+  commentsForPatch, getGeneralComment, getComment,
+  setComment, deleteComment, setGeneralComment,
+  approvePatch, unapprovePatch, denyPatch, undenyPatch,
+  COMMIT_FILE, COMMIT_KEY,
+} from './state.js';
 // Persistence: save/restore + prompt bar
 import {
   flushSave, saveStateBulk, cancelPendingSaves,
@@ -11,7 +17,8 @@ import { diffFingerprint, migrateApprovals, detectRevisionChanges } from './revi
 // Renderer: all DOM functions + re-exportable items for tests
 import {
   patchEls, updateSubmitButton, removeExistingForm, showCommentForm,
-  renderDraftDisplay, renderCommitMessageSection, renderFileNav, renderFile,
+  renderDraftDisplay, renderCommentDisplay, renderCommitMessageSection,
+  renderFileNav, renderFile,
   renderTabs, switchPatch, buildPatchEl, renderCurrentPatch, initPatchNodes,
   addDragScroll, initTabsDragScroll, getFileNavCollapsed, setFileNavCollapsed,
   setupStickySidebarOffset,
@@ -270,7 +277,7 @@ async function loadAndRender() {
     updateSubmitButton();
     refreshPromptBar();
 
-    initStateChannel(data.worktreeName, syncFromRemote);
+    initStateChannel(data.worktreeName, applyRemoteDelta);
   } catch (err) {
     loading.style.display = 'none';
     errorMsg.style.display = '';
@@ -289,9 +296,191 @@ function applySavedState(saved) {
   replaceDrafts(saved.drafts || null);
 }
 
-// Skip if we have a pending save of our own — our save will broadcast next and
-// the other tab will catch up then.  Last-write-wins for true conflicts.
-async function syncFromRemote() {
+// ── Targeted remote-delta application ──────────────────────────────────────
+// When another tab broadcasts a delta, apply only the affected piece of the
+// UI in place.  Crucially this leaves open comment forms, focused textareas,
+// and in-progress typing untouched — the failure mode the bulk-refresh path
+// has.  Unknown kinds and `bulk`/`revisions` fall back to fullRefresh().
+
+function lineObjForKey(key) {
+  const num = parseInt(key.slice(1), 10);
+  if (key[0] === 'n') return { newLineNum: num, oldLineNum: null, content: '' };
+  return { newLineNum: null, oldLineNum: num, content: '' };
+}
+
+function findLineTr(patchHash, file, key) {
+  const idx = state.patches.findIndex((p) => p.hash === patchHash);
+  if (idx < 0) return { idx: -1, tr: null };
+  const el = patchEls[idx]?.el;
+  if (!el) return { idx, tr: null };
+  const tr = el.querySelector(
+    `tr[data-file-path="${CSS.escape(file)}"][data-line-key="${CSS.escape(key)}"]`
+  );
+  return { idx, tr };
+}
+
+function lineFormOpen(tr, key) {
+  const next = tr && tr.nextElementSibling;
+  return !!(next && next.classList.contains('comment-form-row') && next.dataset.lineKey === key);
+}
+
+function commitMsgFormOpen(patchIdx) {
+  const el = patchEls[patchIdx]?.el;
+  if (!el) return false;
+  return !!el.querySelector('.commit-msg-block .comment-form-inner');
+}
+
+function refreshCommitMessageBlock(patchIdx) {
+  const el = patchEls[patchIdx]?.el;
+  if (!el) return;
+  const block = el.querySelector('.commit-msg-block');
+  if (!block) return;
+  const patch = state.patches[patchIdx];
+  const isApproved = state.approved.has(patch.hash);
+  const container = block.parentNode;
+  const before = block.nextSibling;
+  block.remove();
+  const tmp = document.createElement('div');
+  renderCommitMessageSection(tmp, patch.hash, patch.body || patch.message, isApproved);
+  container.insertBefore(tmp.firstChild, before);
+}
+
+function applyRemoteComment({ patchHash, file, key, value }) {
+  if (value === null) deleteComment(patchHash, file, key);
+  else setComment(patchHash, file, key, value);
+
+  if (file === COMMIT_FILE && key === COMMIT_KEY) {
+    const idx = state.patches.findIndex((p) => p.hash === patchHash);
+    if (idx < 0) return;
+    if (!commitMsgFormOpen(idx)) refreshCommitMessageBlock(idx);
+  } else {
+    const { tr } = findLineTr(patchHash, file, key);
+    if (tr && !lineFormOpen(tr, key)) {
+      const line = lineObjForKey(key);
+      const next = tr.nextElementSibling;
+      if (next
+          && (next.classList.contains('comment-display-row') || next.classList.contains('comment-draft-row'))
+          && next.dataset.lineKey === key) {
+        next.remove();
+      }
+      if (value === null) renderDraftDisplay(tr, patchHash, file, line, key);
+      else renderCommentDisplay(tr, patchHash, file, line, key);
+    }
+  }
+  renderTabs();
+  updateSubmitButton();
+}
+
+function applyRemoteDraft({ key, value }) {
+  // key is "patchHash/filePath/lineKey"
+  const slash1 = key.indexOf('/');
+  const slash2 = key.lastIndexOf('/');
+  if (slash1 < 0 || slash2 <= slash1) return;
+  const patchHash = key.slice(0, slash1);
+  const filePath  = key.slice(slash1 + 1, slash2);
+  const lineKeyStr = key.slice(slash2 + 1);
+
+  if (value == null || value === '') delete drafts[key];
+  else drafts[key] = value;
+
+  if (filePath === COMMIT_FILE && lineKeyStr === COMMIT_KEY) {
+    const idx = state.patches.findIndex((p) => p.hash === patchHash);
+    if (idx >= 0 && !commitMsgFormOpen(idx)) refreshCommitMessageBlock(idx);
+    return;
+  }
+
+  const { tr } = findLineTr(patchHash, filePath, lineKeyStr);
+  if (!tr || lineFormOpen(tr, lineKeyStr)) return;
+  if (getComment(patchHash, filePath, lineKeyStr)) return; // saved comment takes precedence
+
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('comment-draft-row') && next.dataset.lineKey === lineKeyStr) {
+    next.remove();
+  }
+  if (value && value.trim()) {
+    renderDraftDisplay(tr, patchHash, filePath, lineObjForKey(lineKeyStr), lineKeyStr);
+  }
+}
+
+function applyRemoteDecision({ patchHash, action }) {
+  if (action === 'approve')        approvePatch(patchHash);
+  else if (action === 'unapprove') unapprovePatch(patchHash);
+  else if (action === 'deny')      denyPatch(patchHash);
+  else if (action === 'undeny')    undenyPatch(patchHash);
+  else return;
+
+  const idx = state.patches.findIndex((p) => p.hash === patchHash);
+  if (idx >= 0) {
+    const el = patchEls[idx]?.el;
+    const isApproved = state.approved.has(patchHash);
+    const isDenied   = state.denied.has(patchHash);
+    if (el) {
+      const heading = el.querySelector('.patch-heading');
+      if (heading) {
+        heading.className = 'patch-heading'
+          + (isApproved ? ' patch-heading-approved' : '')
+          + (isDenied  ? ' patch-heading-denied'   : '');
+      }
+      const approveBtn = el.querySelector('.btn-approve, .btn-unapprove');
+      if (approveBtn) {
+        approveBtn.className = isApproved ? 'btn-unapprove' : 'btn-approve';
+        approveBtn.textContent = isApproved ? 'Approved ✓' : 'Approve';
+      }
+      const denyBtn = el.querySelector('.btn-deny, .btn-undeny');
+      if (denyBtn) {
+        denyBtn.className = isDenied ? 'btn-undeny' : 'btn-deny';
+        denyBtn.textContent = isDenied ? 'Denied ✗' : 'Deny';
+      }
+      const ta = el.querySelector('.general-comment-textarea');
+      if (ta) ta.disabled = isApproved;
+
+      // Commit-message block captures `disabled` in a closure on render.
+      // Re-render it so the showForm gate matches the new approval state —
+      // unless a form is currently open (in which case we mustn't yank it).
+      if (!commitMsgFormOpen(idx)) refreshCommitMessageBlock(idx);
+    }
+    const diffWrap = patchEls[idx]?.diffWrap;
+    if (diffWrap) diffWrap.classList.toggle('diff-approved-readonly', isApproved);
+  }
+  renderTabs();
+  updateSubmitButton();
+  refreshPromptBar();
+}
+
+function applyRemoteGeneralComment({ patchHash, value }) {
+  setGeneralComment(patchHash, value || '');
+  const idx = state.patches.findIndex((p) => p.hash === patchHash);
+  if (idx < 0) return;
+  const el = patchEls[idx]?.el;
+  if (!el) return;
+  const ta = el.querySelector('.general-comment-textarea');
+  if (!ta) return;
+  if (document.activeElement === ta) return; // don't stomp the user's typing
+  ta.value = value || '';
+  updateSubmitButton();
+}
+
+function applyRemoteDelta(delta) {
+  if (!delta || delta.kind === 'bulk' || delta.kind === 'revisions') {
+    return fullRefresh();
+  }
+  try {
+    switch (delta.kind) {
+      case 'comment':         applyRemoteComment(delta); break;
+      case 'draft':           applyRemoteDraft(delta); break;
+      case 'decision':        applyRemoteDecision(delta); break;
+      case 'general-comment': applyRemoteGeneralComment(delta); break;
+      default: return fullRefresh();
+    }
+  } catch {
+    fullRefresh();
+  }
+}
+
+// Full state refetch + re-render — the safety net for unknown deltas, bulk
+// resets, and revision migrations.  Skipped if we have pending typed text:
+// our own debounce will fire next and bring everyone back in sync.
+async function fullRefresh() {
   if (hasPendingSave()) return;
   try {
     const res = await fetch('/api/state');

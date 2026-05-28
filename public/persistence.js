@@ -1,20 +1,19 @@
 import { state, allPatchesFinished } from './state.js';
 
 // ── Cross-tab sync ─────────────────────────────────────────────────────────
-// Without this, a second tab holding stale in-memory state would overwrite a
-// comment another tab just saved on its next save.
+// Each save broadcasts a delta describing what changed so peer tabs can
+// apply a targeted update instead of refetching the entire state and
+// re-rendering (which would clobber any open form mid-typing).
 let stateChannel = null;
 const TAB_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const MSG_STATE_UPDATED = 'state-updated';
 
-export function initStateChannel(worktreeName, onRemoteUpdate) {
+export function initStateChannel(worktreeName, onRemoteDelta) {
   if (typeof BroadcastChannel === 'undefined') return null;
   closeStateChannel();
   stateChannel = new BroadcastChannel(`revue-state-${worktreeName}`);
   stateChannel.onmessage = (e) => {
-    if (e.data && e.data.type === MSG_STATE_UPDATED && e.data.tabId !== TAB_ID) {
-      onRemoteUpdate();
-    }
+    if (!e.data || e.data.tabId === TAB_ID) return;
+    if (e.data.type === 'delta') onRemoteDelta(e.data.delta);
   };
   return stateChannel;
 }
@@ -23,9 +22,9 @@ export function closeStateChannel() {
   if (stateChannel) { stateChannel.close(); stateChannel = null; }
 }
 
-function broadcastUpdate() {
+function broadcastDelta(delta) {
   if (!stateChannel) return;
-  try { stateChannel.postMessage({ type: MSG_STATE_UPDATED, tabId: TAB_ID }); }
+  try { stateChannel.postMessage({ type: 'delta', tabId: TAB_ID, delta }); }
   catch { /* channel closed mid-save — ignore */ }
 }
 
@@ -52,7 +51,7 @@ function showFailed() {
   if (el) el.textContent = 'Save failed';
 }
 
-async function postJson(url, body) {
+async function postJson(url, body, delta) {
   showSaving();
   try {
     const res = await fetch(url, {
@@ -62,7 +61,7 @@ async function postJson(url, body) {
     });
     if (!res.ok) { showFailed(); return false; }
     showSaved();
-    broadcastUpdate();
+    if (delta) broadcastDelta(delta);
     return true;
   } catch {
     showFailed();
@@ -76,15 +75,27 @@ async function postJson(url, body) {
 // serialises read-modify-write under a per-worktree lock.
 
 export function saveCommentNow(patchHash, file, key, comment) {
-  return postJson('/api/state/comment', { patchHash, file, key, comment });
+  return postJson(
+    '/api/state/comment',
+    { patchHash, file, key, comment },
+    { kind: 'comment', patchHash, file, key, value: comment },
+  );
 }
 
 export function saveDecisionNow(patchHash, kind) {
-  return postJson('/api/state/decision', { patchHash, kind });
+  return postJson(
+    '/api/state/decision',
+    { patchHash, kind },
+    { kind: 'decision', patchHash, action: kind },
+  );
 }
 
 export function saveRevisionsNow(revisions, approved, denied) {
-  return postJson('/api/state/revisions', { revisions, approved, denied });
+  return postJson(
+    '/api/state/revisions',
+    { revisions, approved, denied },
+    { kind: 'revisions' },
+  );
 }
 
 // ── Debounced saves for typed text ─────────────────────────────────────────
@@ -93,15 +104,18 @@ export function saveRevisionsNow(revisions, approved, denied) {
 // timers in a Map so quickly switching between two drafts doesn't lose either.
 const DEBOUNCE_MS = 500;
 
-function makeDebouncedSaver(url, buildBody) {
+function makeDebouncedSaver(url, buildBody, buildDelta) {
   const pending = new Map(); // key -> { payload, timer }
+  function fire(key, payload) {
+    return postJson(url, buildBody(key, payload), buildDelta(key, payload));
+  }
   return {
     schedule(key, payload) {
       const prev = pending.get(key);
       if (prev) clearTimeout(prev.timer);
       const timer = setTimeout(() => {
         pending.delete(key);
-        postJson(url, buildBody(key, payload));
+        fire(key, payload);
       }, DEBOUNCE_MS);
       pending.set(key, { payload, timer });
     },
@@ -113,7 +127,7 @@ function makeDebouncedSaver(url, buildBody) {
       const all = [];
       for (const [key, { payload, timer }] of pending) {
         clearTimeout(timer);
-        all.push(postJson(url, buildBody(key, payload)));
+        all.push(fire(key, payload));
       }
       pending.clear();
       return Promise.all(all);
@@ -126,8 +140,16 @@ function makeDebouncedSaver(url, buildBody) {
   };
 }
 
-const draftSaver = makeDebouncedSaver('/api/state/draft', (key, text) => ({ key, text }));
-const gcSaver    = makeDebouncedSaver('/api/state/general-comment', (patchHash, text) => ({ patchHash, text }));
+const draftSaver = makeDebouncedSaver(
+  '/api/state/draft',
+  (key, text) => ({ key, text }),
+  (key, text) => ({ kind: 'draft', key, value: text }),
+);
+const gcSaver = makeDebouncedSaver(
+  '/api/state/general-comment',
+  (patchHash, text) => ({ patchHash, text }),
+  (patchHash, text) => ({ kind: 'general-comment', patchHash, value: text }),
+);
 
 export function scheduleDraftSave(key, text) { draftSaver.schedule(key, text); }
 export function scheduleGeneralCommentSave(patchHash, text) { gcSaver.schedule(patchHash, text); }
@@ -136,7 +158,11 @@ export function scheduleGeneralCommentSave(patchHash, text) { gcSaver.schedule(p
 // debounce would visibly leak the cleared draft into other tabs.
 export function saveDraftNow(key, text) {
   draftSaver.cancelKey(key);
-  return postJson('/api/state/draft', { key, text });
+  return postJson(
+    '/api/state/draft',
+    { key, text },
+    { kind: 'draft', key, value: text },
+  );
 }
 
 export function hasPendingSave() {
@@ -162,7 +188,7 @@ export function cancelPendingSaves() {
 // and preserves approved.  Using delta endpoints here would mean N+M POSTs
 // for N comments and M drafts — the bulk endpoint exists for exactly this.
 export async function saveStateBulk(payload) {
-  return postJson('/api/state', payload);
+  return postJson('/api/state', payload, { kind: 'bulk' });
 }
 
 // ── Prompt bar ─────────────────────────────────────────────────────────────

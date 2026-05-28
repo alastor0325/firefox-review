@@ -137,7 +137,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 
 ---
 
-### Task 3b — Remove BroadcastChannel [ ]
+### Task 3b — Remove BroadcastChannel [x]
 **Goal:** clean up. Depends on Task 3a having shipped and proved stable.
 
 - Delete `initStateChannel` / `closeStateChannel` / the BroadcastChannel post-on-save call.
@@ -149,7 +149,7 @@ Ordering: 1a → 1b → 2 → 3a → 3b → 4. Earlier tasks are landable alone;
 **Risk:** low if 3a has been stable for a release.
 
 **Status notes:**
-- (none yet)
+- 2026-05-27 — landed. `persistence.js` no longer creates a `BroadcastChannel`; `initStateChannel` opens only an `EventSource`. Per-tab `_seq` machinery deleted (cross-transport dedupe no longer needed). Saves still send `X-Tab-Id` so the server can route the SSE event back without echoing to the originator. All cross-tab/cross-context UI tests pass on SSE alone.
 
 ---
 
@@ -182,3 +182,4 @@ Append a dated entry when a task changes status.
 - 2026-05-27 — Task 1b complete.
 - 2026-05-27 — Task 2 complete.
 - 2026-05-27 — Task 3a complete.
+- 2026-05-27 — Task 3b complete.

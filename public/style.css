@@ -81,6 +81,10 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
+  /* JetBrains Mono ships programming ligatures (!= -> ≠, == -> ⩵, >=, ->, etc.)
+     that obscure the raw characters in code review.  Turn them off everywhere
+     so what you see in the diff matches what is actually in the file. */
+  font-variant-ligatures: none;
 }
 
 button { font-family: inherit; }

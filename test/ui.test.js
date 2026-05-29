@@ -2420,6 +2420,15 @@ describe('docs/index.html interactive demo', () => {
     expect(status).not.toBe('Save failed');
   }, 30000);
 
+  // Diff lines must show `!=`, `==`, `>=`, `->` as the raw two characters,
+  // never as JetBrains Mono's combined ligature glyphs.  In a code-review
+  // tool, what the reviewer sees has to match what is in the file.
+  test('diff line content renders with programming ligatures disabled', async () => {
+    const cs = await demoPage.locator('.ln-content').first()
+      .evaluate((el) => getComputedStyle(el).fontVariantLigatures);
+    expect(cs).toBe('none');
+  }, 30000);
+
   // The browser must successfully fetch and render the favicon — a regression
   // that breaks the SVG (malformed XML, wrong path) would show up here as a
   // failed image load.

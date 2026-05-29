@@ -498,6 +498,16 @@ describe('server HTTP integration', () => {
     expect(body).toMatch(/<link\s+rel="icon"[^>]*type="image\/svg\+xml"[^>]*href="favicon\.svg"/);
   });
 
+  // JetBrains Mono ships programming ligatures that fuse != == >= -> into
+  // single glyphs.  In code review the raw characters matter — what the
+  // reviewer sees must be exactly what is in the file.  This rule is the
+  // contract that switches those ligatures off.
+  test('GET /style.css disables programming ligatures globally', async () => {
+    const { status, body } = await httpRequest(`${baseUrl}/style.css`);
+    expect(status).toBe(200);
+    expect(body).toMatch(/body\s*{[^}]*font-variant-ligatures:\s*none/);
+  });
+
   test('GET /style.css ships the --top-bar-height-driven sidebar offset', async () => {
     const { status, body } = await httpRequest(`${baseUrl}/style.css`);
     expect(status).toBe(200);
